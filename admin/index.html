@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Haled Lena — Admin Panel</title>
+  <link rel="stylesheet" href="/admin/css/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+
+  <!-- LOGIN SCREEN -->
+  <div id="login-screen" class="login-screen">
+    <div class="login-box">
+      <div class="login-logo">
+        <h1>HALED LENA</h1>
+        <p>Admin Panel</p>
+      </div>
+      <form id="login-form">
+        <div class="form-group">
+          <label>Username or Email</label>
+          <input type="text" id="login-username" placeholder="Enter username" required>
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="login-password" placeholder="Enter password" required>
+        </div>
+        <div id="login-error" class="alert alert-error hidden"></div>
+        <button type="submit" class="btn btn-primary btn-full" id="login-btn">Sign In</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- MAIN APP -->
+  <div id="app" class="app hidden">
+
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-logo">
+        <h2>HALED LENA</h2>
+        <span>Admin</span>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="#" class="nav-item active" data-page="dashboard">
+          <svg viewBox="0 0 24 24">
+            <path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z" />
+          </svg>
+          Dashboard
+        </a>
+        <a href="#" class="nav-item" data-page="orders">
+          <svg viewBox="0 0 24 24">
+            <path
+              d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14l-5-5 1.41-1.41L12 14.17l7.59-7.59L21 8l-9 9z" />
+          </svg>
+          Orders
+          <span class="badge" id="pending-badge">0</span>
+        </a>
+        <a href="#" class="nav-item" data-page="products">
+          <svg viewBox="0 0 24 24">
+            <path d="M20 4H4v2l8 5 8-5V4zM4 13.5V20h16v-6.5l-8 5-8-5z" />
+          </svg>
+          Products
+        </a>
+        <a href="#" class="nav-item" data-page="categories">
+          <svg viewBox="0 0 24 24">
+            <path
+              d="M12 2l-5.5 9h11L12 2zm0 3.84L14.6 10h-5.2L12 5.84zM17.5 13c-2.49 0-4.5 2.01-4.5 4.5S15.01 22 17.5 22 22 19.99 22 17.5 19.99 13 17.5 13zm0 7c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5zM3 21.5h8v-8H3v8zm2-6h4v4H5v-4z" />
+          </svg>
+          Categories
+        </a>
+        <a href="#" class="nav-item" data-page="settings">
+          <svg viewBox="0 0 24 24">
+            <path
+              d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
+          </svg>
+          Settings
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <button id="logout-btn" class="btn-logout">
+          <svg viewBox="0 0 24 24">
+            <path
+              d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z" />
+          </svg>
+          Logout
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <header class="topbar">
+        <button id="sidebar-toggle" class="sidebar-toggle">☰</button>
+        <div class="topbar-right">
+          <span id="admin-name" class="admin-name"></span>
+        </div>
+      </header>
+
+      <!-- PAGES -->
+      <div class="page-content">
+
+        <!-- DASHBOARD PAGE -->
+        <div id="page-dashboard" class="page active">
+          <div class="page-header">
+            <h1>Dashboard</h1>
+            <p id="today-date"></p>
+          </div>
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-icon orange"><svg viewBox="0 0 24 24">
+                  <path
+                    d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14l-5-5 1.41-1.41L12 14.17l7.59-7.59L21 8l-9 9z" />
+                </svg></div>
+              <div>
+                <p class="stat-label">Total Orders</p>
+                <h3 class="stat-value" id="stat-total-orders">—</h3>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon green"><svg viewBox="0 0 24 24">
+                  <path
+                    d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z" />
+                </svg></div>
+              <div>
+                <p class="stat-label">Total Revenue</p>
+                <h3 class="stat-value" id="stat-revenue">—</h3>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon blue"><svg viewBox="0 0 24 24">
+                  <path d="M20 4H4v2l8 5 8-5V4zM4 13.5V20h16v-6.5l-8 5-8-5z" />
+                </svg></div>
+              <div>
+                <p class="stat-label">This Month Orders</p>
+                <h3 class="stat-value" id="stat-month-orders">—</h3>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon purple"><svg viewBox="0 0 24 24">
+                  <path
+                    d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
+                </svg></div>
+              <div>
+                <p class="stat-label">Active Products</p>
+                <h3 class="stat-value" id="stat-products">—</h3>
+              </div>
+            </div>
+          </div>
+
+          <div class="dashboard-grid">
+            <div class="card">
+              <div class="card-header">
+                <h3>Recent Orders</h3><a href="#" class="view-all" data-page="orders">View all</a>
+              </div>
+              <table class="table" id="recent-orders-table">
+                <thead>
+                  <tr>
+                    <th>Order #</th>
+                    <th>Customer</th>
+                    <th>Total</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="recent-orders-body">
+                  <tr>
+                    <td colspan="4" class="loading-row">Loading...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <h3>Orders by Status</h3>
+              </div>
+              <div id="status-chart" class="status-chart"></div>
+            </div>
+          </div>
+          <div class="card mt-20">
+            <div class="card-header">
+              <h3>⚠️ Low Stock Products</h3>
+            </div>
+            <div id="low-stock-list"></div>
+          </div>
+        </div>
+
+        <!-- ORDERS PAGE -->
+        <div id="page-orders" class="page hidden">
+          <div class="page-header">
+            <h1>Orders</h1>
+            <button class="btn btn-secondary" onclick="exportOrders()">📥 Export Excel</button>
+          </div>
+          <div class="card">
+            <div class="filters-row">
+              <input type="text" id="order-search" placeholder="Search by name, phone, order #..." class="search-input"
+                oninput="debounceLoadOrders()">
+              <select id="order-status-filter" onchange="loadOrders()">
+                <option value="">All Statuses</option>
+                <option value="pending">Pending</option>
+                <option value="confirmed">Confirmed</option>
+                <option value="processing">Processing</option>
+                <option value="shipped">Shipped</option>
+                <option value="delivered">Delivered</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+              <input type="date" id="order-from" onchange="loadOrders()">
+              <input type="date" id="order-to" onchange="loadOrders()">
+            </div>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Order #</th>
+                  <th>Customer</th>
+                  <th>Phone</th>
+                  <th>Items</th>
+                  <th>Total</th>
+                  <th>Status</th>
+                  <th>Date</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="orders-tbody">
+                <tr>
+                  <td colspan="8" class="loading-row">Loading...</td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="pagination" id="orders-pagination"></div>
+          </div>
+        </div>
+
+        <!-- PRODUCTS PAGE -->
+        <div id="page-products" class="page hidden">
+          <div class="page-header">
+            <h1>Products</h1>
+            <button class="btn btn-primary" onclick="openProductModal()">+ Add Product</button>
+          </div>
+          <div class="card">
+            <div class="filters-row">
+              <input type="text" id="product-search" placeholder="Search products..." class="search-input"
+                oninput="debounceLoadProducts()">
+            </div>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Image</th>
+                  <th>Name</th>
+                  <th>Category</th>
+                  <th>Price</th>
+                  <th>Stock</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="products-tbody">
+                <tr>
+                  <td colspan="7" class="loading-row">Loading...</td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="pagination" id="products-pagination"></div>
+          </div>
+        </div>
+
+
+        <!-- CATEGORIES PAGE -->
+        <div id="page-categories" class="page hidden">
+          <div class="page-header">
+            <h1>Categories</h1>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
+            <!-- Add Category -->
+            <div class="card">
+              <h3 style="margin-top:0;">Add New Category</h3>
+              <form id="add-category-form">
+                <div class="form-group">
+                  <label>Display Name *</label>
+                  <input type="text" id="cat-name" placeholder="e.g. Kids" required>
+                </div>
+                <div class="form-group">
+                  <label>URL Slug * <small style="color:#888">(used in link, e.g. "kids" → /shop/kids)</small></label>
+                  <input type="text" id="cat-slug" placeholder="e.g. kids" required>
+                </div>
+                <div id="cat-form-msg" class="alert hidden"></div>
+                <button type="submit" class="btn btn-primary">+ Add Category</button>
+              </form>
+            </div>
+            <!-- Existing Categories -->
+            <div class="card">
+              <h3 style="margin-top:0;">Existing Categories</h3>
+              <div id="categories-list">
+                <p style="color:#888;font-size:13px;">Loading...</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SETTINGS PAGE -->
+        <div id="page-settings" class="page hidden">
+          <div class="page-header">
+            <h1>Settings</h1>
+          </div>
+          <div class="card" style="max-width:500px;">
+            <h3 style="margin-top:0;">Change Password</h3>
+            <form id="change-password-form">
+              <div class="form-group">
+                <label>Current Password</label>
+                <input type="password" id="current-password" required>
+              </div>
+              <div class="form-group">
+                <label>New Password</label>
+                <input type="password" id="new-password" required minlength="6">
+              </div>
+              <div class="form-group">
+                <label>Confirm New Password</label>
+                <input type="password" id="confirm-password" required>
+              </div>
+              <div id="pw-msg" class="alert hidden"></div>
+              <button type="submit" class="btn btn-primary">Update Password</button>
+            </form>
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- ORDER DETAIL MODAL -->
+  <div id="order-modal" class="modal hidden">
+    <div class="modal-overlay" onclick="closeModal('order-modal')"></div>
+    <div class="modal-box modal-large">
+      <div class="modal-header">
+        <h2 id="order-modal-title">Order Details</h2>
+        <button class="modal-close" onclick="closeModal('order-modal')">✕</button>
+      </div>
+      <div class="modal-body" id="order-modal-body">Loading...</div>
+    </div>
+  </div>
+
+  <!-- PRODUCT MODAL -->
+  <div id="product-modal" class="modal hidden">
+    <div class="modal-overlay" onclick="closeModal('product-modal')"></div>
+    <div class="modal-box modal-large">
+      <div class="modal-header">
+        <h2 id="product-modal-title">Add Product</h2>
+        <button class="modal-close" onclick="closeModal('product-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="product-form" enctype="multipart/form-data">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Product Name *</label>
+              <input type="text" name="name" required>
+            </div>
+            <div class="form-group">
+              <label>Category *</label>
+              <select name="category" id="product-category-select" required>
+                <option value="">Loading categories...</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Price (EGP) *</label>
+              <input type="number" name="price" step="1" required min="0">
+            </div>
+            <div class="form-group form-full">
+              <label>Description</label>
+              <textarea name="description" rows="3"></textarea>
+            </div>
+            <div class="form-group form-full" id="existing-images-container"></div>
+            <div class="form-group form-full">
+              <label>Upload Images (max 6)</label>
+              <input type="file" name="images" accept="image/*" multiple id="product-images-input">
+              <div id="image-preview" class="image-preview"></div>
+            </div>
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" name="active" checked> Active (visible to users)
+              </label>
+            </div>
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" name="featured"> Featured
+              </label>
+            </div>
+          </div>
+
+          <div class="variants-section">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <h4>Variants — Size / Color / Color Swatch / Stock</h4>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="addVariantRow()">+ Add Variant</button>
+            </div>
+            <div id="variants-container"></div>
+          </div>
+
+          <div id="product-form-msg" class="alert hidden"></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-ghost" onclick="closeModal('product-modal')">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="product-save-btn">Save Product</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- TOAST NOTIFICATION -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/admin/js/app.js"></script>
+</body>
+
+</html>
