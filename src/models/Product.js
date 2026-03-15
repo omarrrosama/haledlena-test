@@ -8,10 +8,15 @@ const variantSchema = new mongoose.Schema({
   sku: { type: String },
 });
 
+const colorImageSchema = new mongoose.Schema({
+  color: { type: String, required: true },     // e.g. "Black"
+  images: [{ type: String }],                   // file paths for this color
+}, { _id: false });
+
 const productSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   nameAr: { type: String, trim: true },
-  slug: { type: String, trim: true, lowercase: true },
+  slug: { type: String, trim: true, lowercase: true, unique: true },
   description: { type: String, trim: true },
   descriptionAr: { type: String, trim: true },
   price: { type: Number, required: true, min: 0 },
@@ -19,15 +24,17 @@ const productSchema = new mongoose.Schema({
     type: String,
     required: true,
     trim: true,
-    // No static enum — category values are validated against the Category collection at the route level
   },
-  images: [{ type: String }], // file paths stored under /uploads/products/
+  productType: { type: String, trim: true }, // e.g. "pantalons", "tops", "jackets"
+  images: [{ type: String }],         // fallback / general images
+  colorImages: [colorImageSchema],    // per-color image sets
   variants: [variantSchema],
   featured: { type: Boolean, default: false },
   active: { type: Boolean, default: true },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });
+
 
 // Virtual: total stock derived from variants (no redundant field)
 productSchema.virtual("totalStock").get(function () {
@@ -48,8 +55,8 @@ productSchema.virtual("colors").get(function () {
 productSchema.set("toJSON", { virtuals: true });
 productSchema.set("toObject", { virtuals: true });
 
-// Keep updatedAt current on every save; auto-generate slug from name if not set
-productSchema.pre("save", function (next) {
+// Keep updatedAt current on every save; auto-generate slug from name if not set, and ensure uniqueness
+productSchema.pre("save", async function (next) {
   this.updatedAt = Date.now();
   if (!this.slug && this.name) {
     this.slug = this.name
@@ -58,6 +65,26 @@ productSchema.pre("save", function (next) {
       .trim()
       .replace(/\s+/g, "-");
   }
+
+  // Ensure unique slug
+  if (this.isModified("slug") || this.isNew) {
+    let baseSlug = this.slug || "product";
+    let currentSlug = baseSlug;
+    let counter = 1;
+    let isUnique = false;
+
+    while (!isUnique) {
+      const existing = await mongoose.models.Product.findOne({ slug: currentSlug, _id: { $ne: this._id } });
+      if (existing) {
+        currentSlug = `${baseSlug}-${counter}`;
+        counter++;
+      } else {
+        isUnique = true;
+      }
+    }
+    this.slug = currentSlug;
+  }
+  
   next();
 });
 

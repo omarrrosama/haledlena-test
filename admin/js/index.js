@@ -1,212 +1,291 @@
 // ===== CONFIG =====
-const API = '/api';
-let token = localStorage.getItem('hl_token');
-let currentPage = 'dashboard';
-let ordersPage = 1, productsPage = 1;
+const API = "/api";
+let token = localStorage.getItem("hl_token");
+let currentPage = "dashboard";
+let ordersPage = 1,
+  productsPage = 1;
 let editingProductId = null;
 let debounceTimer;
+let deletedGeneralImages = []; // URLs of general images to remove on save
+let deletedColorImages = {}; // { colorName: [url, ...] } to remove on save
 
 // ===== INIT =====
-document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('today-date').textContent = new Date().toLocaleDateString('en', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+document.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("today-date").textContent =
+    new Date().toLocaleDateString("en", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+
+  // Allow token passing via URL from frontend (e.g. /admin/?token=XYZ)
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlToken = urlParams.get("token");
+  if (urlToken) {
+    token = urlToken;
+    localStorage.setItem("hl_token", token);
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
 
   if (token) initApp();
   else showLogin();
 
-  document.getElementById('login-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const btn = document.getElementById('login-btn');
-    const err = document.getElementById('login-error');
-    btn.textContent = 'Signing in...';
-    btn.disabled = true;
-    err.classList.add('hidden');
-    try {
-      const res = await apiFetch('/auth/login', 'POST', {
-        username: document.getElementById('login-username').value,
-        password: document.getElementById('login-password').value
-      }, false);
-      token = res.token;
-      localStorage.setItem('hl_token', token);
-      initApp();
-    } catch (e) {
-      err.textContent = e.message;
-      err.classList.remove('hidden');
-    } finally {
-      btn.textContent = 'Sign In';
-      btn.disabled = false;
-    }
-  });
+  document
+    .getElementById("login-form")
+    .addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById("login-btn");
+      const err = document.getElementById("login-error");
+      btn.textContent = "Signing in...";
+      btn.disabled = true;
+      err.classList.add("hidden");
+      try {
+        const res = await apiFetch(
+          "/auth/login",
+          "POST",
+          {
+            username: document.getElementById("login-username").value,
+            password: document.getElementById("login-password").value,
+          },
+          false,
+        );
+        token = res.token;
+        localStorage.setItem("hl_token", token);
+        initApp();
+      } catch (e) {
+        err.textContent = e.message;
+        err.classList.remove("hidden");
+      } finally {
+        btn.textContent = "Sign In";
+        btn.disabled = false;
+      }
+    });
 
   // Nav
-  document.querySelectorAll('.nav-item').forEach(item => {
-    item.addEventListener('click', (e) => {
+  document.querySelectorAll(".nav-item").forEach((item) => {
+    item.addEventListener("click", (e) => {
       e.preventDefault();
       navigateTo(item.dataset.page);
     });
   });
 
   // View-all links
-  document.querySelectorAll('.view-all').forEach(a => {
-    a.addEventListener('click', (e) => { e.preventDefault(); navigateTo(a.dataset.page); });
+  document.querySelectorAll(".view-all").forEach((a) => {
+    a.addEventListener("click", (e) => {
+      e.preventDefault();
+      navigateTo(a.dataset.page);
+    });
   });
 
   // Logout
-  document.getElementById('logout-btn').addEventListener('click', () => {
-    localStorage.removeItem('hl_token');
+  document.getElementById("logout-btn").addEventListener("click", () => {
+    localStorage.removeItem("hl_token");
     token = null;
-    document.getElementById('app').classList.add('hidden');
+    document.getElementById("app").classList.add("hidden");
     showLogin();
   });
 
   // Sidebar toggle
-  document.getElementById('sidebar-toggle').addEventListener('click', () => {
-    document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById("sidebar-toggle").addEventListener("click", () => {
+    document.getElementById("sidebar").classList.toggle("open");
   });
 
   // Change password
-  document.getElementById('change-password-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const msg = document.getElementById('pw-msg');
-    const np = document.getElementById('new-password').value;
-    const cp = document.getElementById('confirm-password').value;
-    if (np !== cp) { showMsg(msg, 'Passwords do not match.', 'error'); return; }
-    try {
-      await apiFetch('/auth/change-password', 'POST', {
-        currentPassword: document.getElementById('current-password').value,
-        newPassword: np
-      });
-      showMsg(msg, 'Password updated successfully!', 'success');
-      e.target.reset();
-    } catch (err) { showMsg(msg, err.message, 'error'); }
-  });
+  document
+    .getElementById("change-password-form")
+    .addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const msg = document.getElementById("pw-msg");
+      const np = document.getElementById("new-password").value;
+      const cp = document.getElementById("confirm-password").value;
+      if (np !== cp) {
+        showMsg(msg, "Passwords do not match.", "error");
+        return;
+      }
+      try {
+        await apiFetch("/auth/change-password", "POST", {
+          currentPassword: document.getElementById("current-password").value,
+          newPassword: np,
+        });
+        showMsg(msg, "Password updated successfully!", "success");
+        e.target.reset();
+      } catch (err) {
+        showMsg(msg, err.message, "error");
+      }
+    });
 
-  document.getElementById('product-form').addEventListener('submit', saveProduct);
-  document.getElementById('product-images-input').addEventListener('change', previewImages);
+  document
+    .getElementById("product-form")
+    .addEventListener("submit", saveProduct);
+  // Note: image preview listeners are added dynamically per color section
 
   // Auto-generate slug from name
-  document.getElementById('cat-name').addEventListener('input', (e) => {
-    const slugField = document.getElementById('cat-slug');
+  document.getElementById("cat-name").addEventListener("input", (e) => {
+    const slugField = document.getElementById("cat-slug");
     // Only auto-fill if slug is empty or was previously auto-generated
     if (!slugField.dataset.manualEdit) {
-      slugField.value = e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      slugField.value = e.target.value
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "");
     }
   });
-  document.getElementById('cat-slug').addEventListener('input', (e) => {
-    e.target.dataset.manualEdit = e.target.value ? 'true' : '';
+  document.getElementById("cat-slug").addEventListener("input", (e) => {
+    e.target.dataset.manualEdit = e.target.value ? "true" : "";
   });
 
   // Add category form
-  document.getElementById('add-category-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const msg = document.getElementById('cat-form-msg');
-    const btn = e.target.querySelector('button[type=submit]');
-    btn.disabled = true;
-    btn.textContent = 'Adding...';
-    msg.classList.add('hidden');
-    try {
-      await apiFetch('/categories', 'POST', {
-        name: document.getElementById('cat-name').value.trim(),
-        slug: document.getElementById('cat-slug').value.trim()
-      });
-      showToast('Category added!', 'success');
-      e.target.reset();
-      document.getElementById('cat-slug').dataset.manualEdit = '';
-      loadCategories();
-    } catch (err) {
-      showMsg(msg, err.message, 'error');
-    } finally {
-      btn.disabled = false;
-      btn.textContent = '+ Add Category';
-    }
-  });
+  document
+    .getElementById("add-category-form")
+    .addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const msg = document.getElementById("cat-form-msg");
+      const btn = e.target.querySelector("button[type=submit]");
+      btn.disabled = true;
+      btn.textContent = "Adding...";
+      msg.classList.add("hidden");
+      try {
+        await apiFetch("/categories", "POST", {
+          name: document.getElementById("cat-name").value.trim(),
+          slug: document.getElementById("cat-slug").value.trim(),
+        });
+        showToast("Category added!", "success");
+        e.target.reset();
+        document.getElementById("cat-slug").dataset.manualEdit = "";
+        loadCategories();
+      } catch (err) {
+        showMsg(msg, err.message, "error");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "+ Add Category";
+      }
+    });
 });
 
 function showLogin() {
-  document.getElementById('login-screen').classList.remove('hidden');
-  document.getElementById('app').classList.add('hidden');
+  document.getElementById("login-screen").classList.remove("hidden");
+  document.getElementById("app").classList.add("hidden");
 }
 
 async function initApp() {
   try {
-    const res = await apiFetch('/auth/me');
-    document.getElementById('admin-name').textContent = `👤 ${res.admin.username}`;
-    document.getElementById('login-screen').classList.add('hidden');
-    document.getElementById('app').classList.remove('hidden');
-    navigateTo('dashboard');
+    const res = await apiFetch("/auth/me");
+    document.getElementById("admin-name").textContent =
+      `👤 ${res.admin.username}`;
+    document.getElementById("login-screen").classList.add("hidden");
+    document.getElementById("app").classList.remove("hidden");
+    navigateTo("dashboard");
   } catch {
-    localStorage.removeItem('hl_token');
+    localStorage.removeItem("hl_token");
     showLogin();
   }
 }
 
 function navigateTo(page) {
   currentPage = page;
-  document.querySelectorAll('.nav-item').forEach(i => i.classList.toggle('active', i.dataset.page === page));
-  document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === `page-${page}`));
-  document.querySelectorAll('.page').forEach(p => p.classList.toggle('hidden', p.id !== `page-${page}`));
-  if (page === 'dashboard') loadDashboard();
-  if (page === 'orders') { ordersPage = 1; loadOrders(); }
-  if (page === 'products') { productsPage = 1; loadProducts(); }
-  if (page === 'categories') loadCategories();
+  document
+    .querySelectorAll(".nav-item")
+    .forEach((i) => i.classList.toggle("active", i.dataset.page === page));
+  document
+    .querySelectorAll(".page")
+    .forEach((p) => p.classList.toggle("active", p.id === `page-${page}`));
+  document
+    .querySelectorAll(".page")
+    .forEach((p) => p.classList.toggle("hidden", p.id !== `page-${page}`));
+  if (page === "dashboard") loadDashboard();
+  if (page === "orders") {
+    ordersPage = 1;
+    loadOrders();
+  }
+  if (page === "products") {
+    productsPage = 1;
+    loadProducts();
+  }
+  if (page === "categories") loadCategories();
 }
 
 // ===== API HELPER =====
-async function apiFetch(endpoint, method = 'GET', body = null, auth = true) {
+async function apiFetch(endpoint, method = "GET", body = null, auth = true) {
   const headers = {};
-  if (auth && token) headers['Authorization'] = `Bearer ${token}`;
+  if (auth && token) headers["Authorization"] = `Bearer ${token}`;
   let opts = { method, headers };
   if (body && !(body instanceof FormData)) {
-    headers['Content-Type'] = 'application/json';
+    headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(body);
   } else if (body instanceof FormData) {
     opts.body = body;
   }
   const res = await fetch(`${API}${endpoint}`, opts);
   const data = await res.json();
-  if (!data.success) throw new Error(data.message || 'Request failed');
+  if (!data.success) throw new Error(data.message || "Request failed");
   return data;
 }
 
 // ===== DASHBOARD =====
 async function loadDashboard() {
   try {
-    const { stats } = await apiFetch('/dashboard/stats');
-    document.getElementById('stat-total-orders').textContent = stats.totalOrders;
-    document.getElementById('stat-revenue').textContent = stats.totalRevenue.toLocaleString() + ' EGP';
-    document.getElementById('stat-month-orders').textContent = stats.thisMonthOrders;
-    document.getElementById('stat-products').textContent = stats.totalProducts;
+    const { stats } = await apiFetch("/dashboard/stats");
+    document.getElementById("stat-total-orders").textContent =
+      stats.totalOrders;
+    document.getElementById("stat-revenue").textContent =
+      stats.totalRevenue.toLocaleString() + " EGP";
+    document.getElementById("stat-month-orders").textContent =
+      stats.thisMonthOrders;
+    document.getElementById("stat-products").textContent = stats.totalProducts;
 
     // Recent orders
-    const tbody = document.getElementById('recent-orders-body');
-    tbody.innerHTML = stats.recentOrders.map(o => `
+    const tbody = document.getElementById("recent-orders-body");
+    tbody.innerHTML =
+      stats.recentOrders
+        .map(
+          (o) => `
       <tr>
         <td><strong>${o.orderNumber}</strong></td>
         <td>${o.customer.name}</td>
         <td><strong>${o.total.toLocaleString()} EGP</strong></td>
         <td><span class="status-badge status-${o.status}">${o.status}</span></td>
       </tr>
-    `).join('') || '<tr><td colspan="4" class="loading-row">No orders yet.</td></tr>';
+    `,
+        )
+        .join("") ||
+      '<tr><td colspan="4" class="loading-row">No orders yet.</td></tr>';
 
     // Status chart
-    const statusColors = { pending: '#f39c12', confirmed: '#3498db', processing: '#9b59b6', shipped: '#1abc9c', delivered: '#2ecc71', cancelled: '#e74c3c' };
-    const total = Object.values(stats.ordersByStatus).reduce((a, b) => a + b, 0) || 1;
-    document.getElementById('status-chart').innerHTML = Object.entries(stats.ordersByStatus).map(([s, c]) => `
+    const statusColors = {
+      pending: "#f39c12",
+      confirmed: "#3498db",
+      processing: "#9b59b6",
+      shipped: "#1abc9c",
+      delivered: "#2ecc71",
+      cancelled: "#e74c3c",
+    };
+    const total =
+      Object.values(stats.ordersByStatus).reduce((a, b) => a + b, 0) || 1;
+    document.getElementById("status-chart").innerHTML =
+      Object.entries(stats.ordersByStatus)
+        .map(
+          ([s, c]) => `
       <div class="status-bar-item">
         <span class="status-bar-label">${s}</span>
-        <div class="status-bar-track"><div class="status-bar-fill" style="width:${(c/total*100).toFixed(1)}%;background:${statusColors[s]||'#888'}"></div></div>
+        <div class="status-bar-track"><div class="status-bar-fill" style="width:${((c / total) * 100).toFixed(1)}%;background:${statusColors[s] || "#888"}"></div></div>
         <span class="status-bar-count">${c}</span>
       </div>
-    `).join('') || '<p style="color:#888;font-size:13px;">No orders yet.</p>';
+    `,
+        )
+        .join("") || '<p style="color:#888;font-size:13px;">No orders yet.</p>';
 
     // Pending badge
     const pending = stats.ordersByStatus.pending || 0;
-    const badge = document.getElementById('pending-badge');
+    const badge = document.getElementById("pending-badge");
     badge.textContent = pending;
-    badge.classList.toggle('show', pending > 0);
+    badge.classList.toggle("show", pending > 0);
 
     // Low stock
-    document.getElementById('low-stock-list').innerHTML = stats.lowStock.length
-      ? stats.lowStock.map(p => `
+    document.getElementById("low-stock-list").innerHTML = stats.lowStock.length
+      ? stats.lowStock
+          .map(
+            (p) => `
         <div class="low-stock-item">
           ${p.images?.[0] ? `<img src="${p.images[0]}" alt="${p.name}">` : '<div class="no-image">N/A</div>'}
           <div class="low-stock-info">
@@ -214,17 +293,21 @@ async function loadDashboard() {
             <span>${p.computedStock ?? 0} units left</span>
           </div>
         </div>
-      `).join('')
+      `,
+          )
+          .join("")
       : '<p style="color:#888;font-size:13px;padding:10px 0;">All products are well-stocked.</p>';
-  } catch (err) { console.error(err); }
+  } catch (err) {
+    console.error(err);
+  }
 }
 
 // ===== ORDERS =====
 async function loadOrders() {
-  const search = document.getElementById('order-search').value;
-  const status = document.getElementById('order-status-filter').value;
-  const from = document.getElementById('order-from').value;
-  const to = document.getElementById('order-to').value;
+  const search = document.getElementById("order-search").value;
+  const status = document.getElementById("order-status-filter").value;
+  const from = document.getElementById("order-from").value;
+  const to = document.getElementById("order-to").value;
 
   let url = `/orders?page=${ordersPage}&limit=15`;
   if (search) url += `&search=${encodeURIComponent(search)}`;
@@ -232,10 +315,14 @@ async function loadOrders() {
   if (from) url += `&from=${from}`;
   if (to) url += `&to=${to}`;
 
-  document.getElementById('orders-tbody').innerHTML = '<tr><td colspan="8" class="loading-row">Loading...</td></tr>';
+  document.getElementById("orders-tbody").innerHTML =
+    '<tr><td colspan="8" class="loading-row">Loading...</td></tr>';
   try {
     const { orders, total } = await apiFetch(url);
-    document.getElementById('orders-tbody').innerHTML = orders.map(o => `
+    document.getElementById("orders-tbody").innerHTML =
+      orders
+        .map(
+          (o) => `
       <tr>
         <td><strong>${o.orderNumber}</strong></td>
         <td>${o.customer.name}</td>
@@ -246,27 +333,38 @@ async function loadOrders() {
         <td>${new Date(o.createdAt).toLocaleDateString()}</td>
         <td><button class="icon-btn" onclick="viewOrder('${o._id}')">👁 View</button></td>
       </tr>
-    `).join('') || '<tr><td colspan="8" class="loading-row">No orders found.</td></tr>';
+    `,
+        )
+        .join("") ||
+      '<tr><td colspan="8" class="loading-row">No orders found.</td></tr>';
 
-    renderPagination('orders-pagination', total, 15, ordersPage, (p) => { ordersPage = p; loadOrders(); });
-  } catch (err) { document.getElementById('orders-tbody').innerHTML = `<tr><td colspan="8" class="loading-row">Error: ${err.message}</td></tr>`; }
+    renderPagination("orders-pagination", total, 15, ordersPage, (p) => {
+      ordersPage = p;
+      loadOrders();
+    });
+  } catch (err) {
+    document.getElementById("orders-tbody").innerHTML =
+      `<tr><td colspan="8" class="loading-row">Error: ${err.message}</td></tr>`;
+  }
 }
 
 async function viewOrder(id) {
-  document.getElementById('order-modal').classList.remove('hidden');
-  document.getElementById('order-modal-body').innerHTML = '<p class="loading-row">Loading...</p>';
+  document.getElementById("order-modal").classList.remove("hidden");
+  document.getElementById("order-modal-body").innerHTML =
+    '<p class="loading-row">Loading...</p>';
   try {
     const { order } = await apiFetch(`/orders/${id}`);
-    document.getElementById('order-modal-title').textContent = `Order #${order.orderNumber}`;
-    document.getElementById('order-modal-body').innerHTML = `
+    document.getElementById("order-modal-title").textContent =
+      `Order #${order.orderNumber}`;
+    document.getElementById("order-modal-body").innerHTML = `
       <div class="order-detail-grid">
         <div class="detail-section">
           <h4>Customer</h4>
           <p><strong>Name:</strong> ${order.customer.name}</p>
           <p><strong>Phone:</strong> ${order.customer.phone}</p>
-          <p><strong>Email:</strong> ${order.customer.email || 'N/A'}</p>
+          <p><strong>Email:</strong> ${order.customer.email || "N/A"}</p>
           <p><strong>Address:</strong> ${order.customer.address}, ${order.customer.city}</p>
-          ${order.customer.notes ? `<p><strong>Notes:</strong> ${order.customer.notes}</p>` : ''}
+          ${order.customer.notes ? `<p><strong>Notes:</strong> ${order.customer.notes}</p>` : ""}
         </div>
         <div class="detail-section">
           <h4>Order Info</h4>
@@ -280,240 +378,438 @@ async function viewOrder(id) {
       <table class="table" style="margin-top:16px;">
         <thead><tr><th>Product</th><th>Variant</th><th>Qty</th><th>Price</th><th>Subtotal</th></tr></thead>
         <tbody>
-          ${order.items.map(i => `
+          ${order.items
+            .map(
+              (i) => `
             <tr>
               <td>${i.productName}</td>
-              <td>${i.size || '-'} / ${i.color || '-'}</td>
+              <td>${i.size || "-"} / ${i.color || "-"}</td>
               <td>${i.quantity}</td>
               <td>${i.price.toLocaleString()} EGP</td>
               <td>${i.subtotal.toLocaleString()} EGP</td>
             </tr>
-          `).join('')}
+          `,
+            )
+            .join("")}
         </tbody>
       </table>
 
       <div style="text-align:right;margin-top:12px;padding:12px;background:#f9f9f9;border-radius:8px;">
         <p>Subtotal: <strong>${order.subtotal.toLocaleString()} EGP</strong></p>
-        <p>Shipping: <strong>${order.shippingFee > 0 ? order.shippingFee.toLocaleString() + ' EGP' : 'Free'}</strong></p>
+        <p>Shipping: <strong>${order.shippingFee > 0 ? order.shippingFee.toLocaleString() + " EGP" : "Free"}</strong></p>
         <p style="font-size:16px;">Total: <strong>${order.total.toLocaleString()} EGP</strong></p>
       </div>
 
       <div style="margin-top:16px;">
         <h4 style="margin-bottom:8px;font-size:14px;">Update Status</h4>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          ${['pending','confirmed','processing','shipped','delivered','cancelled'].map(s => `
-            <button class="btn btn-sm ${s === order.status ? 'btn-primary' : 'btn-ghost'}" onclick="updateOrderStatus('${order._id}','${s}')">${s}</button>
-          `).join('')}
+          ${[
+            "pending",
+            "confirmed",
+            "processing",
+            "shipped",
+            "delivered",
+            "cancelled",
+          ]
+            .map(
+              (s) => `
+            <button class="btn btn-sm ${s === order.status ? "btn-primary" : "btn-ghost"}" onclick="updateOrderStatus('${order._id}','${s}')">${s}</button>
+          `,
+            )
+            .join("")}
         </div>
       </div>
 
       <div style="margin-top:16px;">
         <h4 style="margin-bottom:8px;font-size:14px;">Admin Notes</h4>
-        <textarea id="order-notes-input" rows="2" style="width:100%;padding:8px;border:1px solid #e5e5e5;border-radius:6px;font-family:inherit;">${order.adminNotes || ''}</textarea>
+        <textarea id="order-notes-input" rows="2" style="width:100%;padding:8px;border:1px solid #e5e5e5;border-radius:6px;font-family:inherit;">${order.adminNotes || ""}</textarea>
         <button class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="saveOrderNotes('${order._id}')">Save Notes</button>
       </div>
     `;
-  } catch (err) { document.getElementById('order-modal-body').innerHTML = `<p class="loading-row">Error: ${err.message}</p>`; }
+  } catch (err) {
+    document.getElementById("order-modal-body").innerHTML =
+      `<p class="loading-row">Error: ${err.message}</p>`;
+  }
 }
 
 async function updateOrderStatus(id, status) {
   try {
-    await apiFetch(`/orders/${id}/status`, 'PATCH', { status });
-    showToast('Status updated!', 'success');
+    await apiFetch(`/orders/${id}/status`, "PATCH", { status });
+    showToast("Status updated!", "success");
     viewOrder(id);
-    if (currentPage === 'orders') loadOrders();
+    if (currentPage === "orders") loadOrders();
     loadDashboard();
-  } catch (err) { showToast(err.message, 'error'); }
+  } catch (err) {
+    showToast(err.message, "error");
+  }
 }
 
 async function saveOrderNotes(id) {
-  const notes = document.getElementById('order-notes-input').value;
+  const notes = document.getElementById("order-notes-input").value;
   try {
-    await apiFetch(`/orders/${id}/notes`, 'PATCH', { notes });
-    showToast('Notes saved!', 'success');
-  } catch (err) { showToast(err.message, 'error'); }
+    await apiFetch(`/orders/${id}/notes`, "PATCH", { notes });
+    showToast("Notes saved!", "success");
+  } catch (err) {
+    showToast(err.message, "error");
+  }
 }
 
 function exportOrders() {
-  const status = document.getElementById('order-status-filter').value;
-  const from = document.getElementById('order-from').value;
-  const to = document.getElementById('order-to').value;
+  const status = document.getElementById("order-status-filter").value;
+  const from = document.getElementById("order-from").value;
+  const to = document.getElementById("order-to").value;
   let url = `/api/orders/export/excel?`;
   if (status) url += `status=${status}&`;
   if (from) url += `from=${from}&`;
   if (to) url += `to=${to}&`;
-  window.open(url + `token=${token}`, '_blank');
+  window.open(url + `token=${token}`, "_blank");
 }
 
 // ===== PRODUCTS =====
 async function loadProducts() {
-  const search = document.getElementById('product-search').value;
+  const search = document.getElementById("product-search").value;
   let url = `/products/admin/all?page=${productsPage}&limit=15`;
   if (search) url += `&search=${encodeURIComponent(search)}`;
 
-  document.getElementById('products-tbody').innerHTML = '<tr><td colspan="7" class="loading-row">Loading...</td></tr>';
+  document.getElementById("products-tbody").innerHTML =
+    '<tr><td colspan="7" class="loading-row">Loading...</td></tr>';
   try {
     const { products, total } = await apiFetch(url);
-    document.getElementById('products-tbody').innerHTML = products.map(p => {
-      const stock = p.variants ? p.variants.reduce((s, v) => s + (v.stock || 0), 0) : 0;
-      return `
+    document.getElementById("products-tbody").innerHTML =
+      products
+        .map((p) => {
+          const stock = p.variants
+            ? p.variants.reduce((s, v) => s + (v.stock || 0), 0)
+            : 0;
+          return `
         <tr>
           <td>${p.images?.[0] ? `<img src="${p.images[0]}" class="product-thumb">` : '<div class="no-image">No img</div>'}</td>
-          <td><strong>${p.name}</strong><br><small style="color:#888">${p.slug || ''}</small></td>
+          <td><strong>${p.name}</strong><br><small style="color:#888">${p.slug || ""}</small></td>
           <td><span style="background:#f0f0f0;padding:2px 8px;border-radius:4px;font-size:12px;text-transform:capitalize;">${p.category}</span></td>
           <td>${p.price.toLocaleString()} EGP</td>
           <td>${stock} units</td>
-          <td><span class="status-badge ${p.active ? 'status-delivered' : 'status-cancelled'}">${p.active ? 'Active' : 'Inactive'}</span></td>
+          <td><span class="status-badge ${p.active ? "status-delivered" : "status-cancelled"}">${p.active ? "Active" : "Inactive"}</span></td>
           <td style="display:flex;gap:6px;">
             <button class="icon-btn" onclick="openProductModal('${p._id}')">✏️</button>
             <button class="icon-btn" onclick="deleteProduct('${p._id}','${p.name}')">🗑</button>
           </td>
         </tr>
       `;
-    }).join('') || '<tr><td colspan="7" class="loading-row">No products found.</td></tr>';
+        })
+        .join("") ||
+      '<tr><td colspan="7" class="loading-row">No products found.</td></tr>';
 
-    renderPagination('products-pagination', total, 15, productsPage, (p) => { productsPage = p; loadProducts(); });
-  } catch (err) { document.getElementById('products-tbody').innerHTML = `<tr><td colspan="7" class="loading-row">Error: ${err.message}</td></tr>`; }
+    renderPagination("products-pagination", total, 15, productsPage, (p) => {
+      productsPage = p;
+      loadProducts();
+    });
+  } catch (err) {
+    document.getElementById("products-tbody").innerHTML =
+      `<tr><td colspan="7" class="loading-row">Error: ${err.message}</td></tr>`;
+  }
 }
 
 async function openProductModal(id = null) {
   editingProductId = id;
-  const form = document.getElementById('product-form');
+  const form = document.getElementById("product-form");
   form.reset();
-  document.getElementById('variants-container').innerHTML = '';
-  document.getElementById('image-preview').innerHTML = '';
-  document.getElementById('existing-images-container').innerHTML = '';
-  document.getElementById('product-form-msg').classList.add('hidden');
-  document.getElementById('product-modal-title').textContent = id ? 'Edit Product' : 'Add Product';
-  document.getElementById('product-modal').classList.remove('hidden');
+  document.getElementById("variants-container").innerHTML = "";
+  document.getElementById("image-preview").innerHTML = "";
+  document.getElementById("existing-images-container").innerHTML = "";
+  const colorImgContainer = document.getElementById("color-images-container");
+  if (colorImgContainer) colorImgContainer.innerHTML = "";
+
+  document.getElementById("product-form-msg").classList.add("hidden");
+  document.getElementById("product-modal-title").textContent = id
+    ? "Edit Product"
+    : "Add Product";
+  document.getElementById("product-modal").classList.remove("hidden");
+
+  deletedGeneralImages = [];
+  deletedColorImages = {};
 
   if (id) {
     try {
       const data = await apiFetch(`/products/admin/all`);
-      const p = data.products.find(x => x._id === id);
-      if (!p) throw new Error('Product not found');
+      const p = data.products.find((x) => x._id === id);
+      if (!p) throw new Error("Product not found");
 
       // Populate categories and pre-select the product's current category
-      await populateCategorySelect(p.category || '');
+      await populateCategorySelect(p.category || "");
 
-      form.querySelector('[name=name]').value = p.name || '';
-      form.querySelector('[name=price]').value = p.price || '';
-      form.querySelector('[name=description]').value = p.description || '';
-      form.querySelector('[name=featured]').checked = p.featured || false;
-      form.querySelector('[name=active]').checked = p.active !== false;
+      form.querySelector("[name=name]").value = p.name || "";
+      form.querySelector("[name=productType]").value = p.productType || "";
+      form.querySelector("[name=price]").value = p.price || "";
+      form.querySelector("[name=description]").value = p.description || "";
+      form.querySelector("[name=featured]").checked = p.featured || false;
+      form.querySelector("[name=active]").checked = p.active !== false;
 
-      // Show current images
+      // Show current general images with delete buttons
       if (p.images && p.images.length > 0) {
-        const container = document.getElementById('existing-images-container');
+        const container = document.getElementById("existing-images-container");
         container.innerHTML = `
-          <p style="font-size:12px;color:#888;margin-bottom:6px;">Current images (add new ones above to replace):</p>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            ${p.images.map(img => `<img src="${img}" style="width:64px;height:64px;object-fit:cover;border-radius:4px;border:1px solid #eee;">`).join('')}
-          </div>
+          <p style="font-size:12px;color:#888;margin-bottom:6px;">Current general images (click ✕ to remove):</p>
+          <div id="existing-general-imgs" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
         `;
+        const imgWrapper = container.querySelector("#existing-general-imgs");
+        deletedGeneralImages = [];
+        p.images.forEach((img) => {
+          const wrap = document.createElement("div");
+          wrap.style.cssText = "position:relative;display:inline-block;";
+          wrap.innerHTML = `
+            <img src="${img}" style="width:64px;height:64px;object-fit:cover;border-radius:4px;border:1px solid #eee;display:block;">
+            <button type="button" onclick="removeGeneralImage(this,'${img}')" style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;background:#e74c3c;color:#fff;border:none;cursor:pointer;font-size:10px;line-height:18px;text-align:center;padding:0;">✕</button>
+          `;
+          imgWrapper.appendChild(wrap);
+        });
       }
 
-      // Load variants
-      (p.variants || []).forEach(v => addVariantRow(v));
-    } catch (err) { showToast('Failed to load product: ' + err.message, 'error'); }
+      // Load variants first, then build color-image sections with existing colorImages
+      (p.variants || []).forEach((v) => addVariantRow(v));
+      if (p.colorImages && p.colorImages.length > 0) {
+        buildColorImagesSections(p.colorImages);
+      }
+    } catch (err) {
+      showToast("Failed to load product: " + err.message, "error");
+    }
   } else {
     // Populate categories with no pre-selection
-    await populateCategorySelect('');
+    await populateCategorySelect("");
     addVariantRow();
   }
 }
 
-
 function addVariantRow(v = {}) {
-  const div = document.createElement('div');
-  div.className = 'variant-row';
+  const div = document.createElement("div");
+  div.className = "variant-row";
   div.innerHTML = `
-    <input type="text" placeholder="Size (e.g. S, M, L, S-M)" class="v-size" value="${v.size || ''}">
-    <input type="text" placeholder="Color name (e.g. Black)" class="v-color" value="${v.color || ''}">
-    <input type="color" class="v-colorhex" value="${v.colorHex || '#161619'}" title="Color swatch">
+    <input type="text" placeholder="Size (e.g. S, M, L, S-M)" class="v-size" value="${v.size || ""}">
+    <input type="text" placeholder="Color name (e.g. Black)" class="v-color" value="${v.color || ""}">
+    <input type="color" class="v-colorhex" value="${v.colorHex || "#161619"}" title="Color swatch">
     <input type="number" placeholder="Stock" class="v-stock" min="0" value="${v.stock || 0}">
-    <button type="button" class="icon-btn" onclick="this.parentElement.remove()">🗑</button>
+    <button type="button" class="icon-btn" onclick="this.parentElement.remove(); buildColorImagesSections();">🗑</button>
   `;
-  document.getElementById('variants-container').appendChild(div);
+  // Rebuild color-images panel whenever color name changes
+  div
+    .querySelector(".v-color")
+    .addEventListener("change", buildColorImagesSections);
+  div
+    .querySelector(".v-color")
+    .addEventListener("blur", buildColorImagesSections);
+  document.getElementById("variants-container").appendChild(div);
+  buildColorImagesSections();
 }
 
-function previewImages(e) {
-  const preview = document.getElementById('image-preview');
-  preview.innerHTML = '';
-  Array.from(e.target.files).forEach(file => {
-    const img = document.createElement('img');
-    img.src = URL.createObjectURL(file);
-    preview.appendChild(img);
+/** Build one image-upload section per unique color found in variants */
+function buildColorImagesSections(existingColorImages = null) {
+  const container = document.getElementById("color-images-container");
+  if (!container) return;
+
+  // Collect unique color names from the current variant rows
+  const colors = [];
+  document
+    .querySelectorAll("#variants-container .variant-row .v-color")
+    .forEach((inp) => {
+      const c = inp.value.trim();
+      if (c && !colors.includes(c)) colors.push(c);
+    });
+
+  // Preserve already-picked files & existing previews per color
+  const savedFiles = {};
+  container.querySelectorAll(".color-img-section").forEach((sec) => {
+    const color = sec.dataset.color;
+    const input = sec.querySelector("input[type=file]");
+    if (input && input.files.length > 0) savedFiles[color] = input.files;
+  });
+
+  // Use passed existingColorImages or whatever is currently stored in the section
+  const existingMap = {};
+  if (existingColorImages) {
+    existingColorImages.forEach((ci) => {
+      existingMap[ci.color] = ci.images || [];
+    });
+  } else {
+    // Try to read from data attributes we previously stored
+    container.querySelectorAll(".color-img-section").forEach((sec) => {
+      const raw = sec.dataset.existing;
+      if (raw) existingMap[sec.dataset.color] = JSON.parse(raw);
+    });
+  }
+
+  container.innerHTML = colors.length
+    ? '<p style="font-size:12px;color:#888;margin:12px 0 6px;">Upload photos for each color:</p>'
+    : "";
+
+  colors.forEach((color) => {
+    const sec = document.createElement("div");
+    sec.className = "color-img-section";
+    sec.dataset.color = color;
+    const existingImgs = existingMap[color] || [];
+    sec.dataset.existing = JSON.stringify(existingImgs);
+
+    sec.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="width:14px;height:14px;border-radius:50%;background:var(--ci-hex, #999);display:inline-block;"></span>
+        <strong style="font-size:13px;">${color} — photos</strong>
+      </div>
+      ${
+        existingImgs.length
+          ? `
+        <div class="existing-color-imgs" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
+          ${existingImgs
+            .map(
+              (img) => `
+            <div class="existing-color-img-wrap" style="position:relative;display:inline-block;">
+              <img src="${img}" style="width:52px;height:52px;object-fit:cover;border-radius:4px;border:1px solid #eee;display:block;" title="Existing">
+              <button type="button" class="del-color-img-btn" data-url="${img}" data-color="${color}" style="position:absolute;top:-5px;right:-5px;width:16px;height:16px;border-radius:50%;background:#e74c3c;color:#fff;border:none;cursor:pointer;font-size:9px;line-height:16px;text-align:center;padding:0;">✕</button>
+            </div>`,
+            )
+            .join("")}
+        </div>
+        <p style="font-size:11px;color:#888;margin-bottom:4px;">Upload new images to add more (existing images remain unless you click ✕).</p>
+      `
+          : ""
+      }
+      <label class="color-img-label" style="display:block;border:1px dashed #ccc;padding:10px;border-radius:6px;cursor:pointer;text-align:center;font-size:12px;color:#666;">
+        📷 Choose photos for <strong>${color}</strong>
+        <input type="file" accept="image/*" multiple name="colorImg_${encodeURIComponent(color)}" style="display:none;">
+      </label>
+      <div class="color-img-preview" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;"></div>
+    `;
+
+    // Attach file-change listener
+    const fileInput = sec.querySelector("input[type=file]");
+    const preview = sec.querySelector(".color-img-preview");
+    fileInput.addEventListener("change", () => {
+      preview.innerHTML = "";
+      Array.from(fileInput.files).forEach((file) => {
+        const img = document.createElement("img");
+        img.src = URL.createObjectURL(file);
+        img.style.cssText =
+          "width:52px;height:52px;object-fit:cover;border-radius:4px;border:1px solid #eee;";
+        preview.appendChild(img);
+      });
+    });
+
+    // Wire up existing-image delete buttons
+    sec.querySelectorAll(".del-color-img-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const url = btn.dataset.url;
+        const colorKey = btn.dataset.color;
+        if (!deletedColorImages[colorKey]) deletedColorImages[colorKey] = [];
+        deletedColorImages[colorKey].push(url);
+        btn.closest(".existing-color-img-wrap").remove();
+      });
+    });
+
+    container.appendChild(sec);
   });
 }
 
 async function saveProduct(e) {
   e.preventDefault();
-  const btn = document.getElementById('product-save-btn');
-  const msg = document.getElementById('product-form-msg');
+  const btn = document.getElementById("product-save-btn");
+  const msg = document.getElementById("product-form-msg");
   btn.disabled = true;
-  btn.textContent = 'Saving...';
-  msg.classList.add('hidden');
+  btn.textContent = "Saving...";
+  msg.classList.add("hidden");
 
   try {
-    const form = document.getElementById('product-form');
+    const form = document.getElementById("product-form");
     const fd = new FormData();
 
-    fd.append('name', form.querySelector('[name=name]').value);
-    fd.append('category', form.querySelector('[name=category]').value);
-    fd.append('price', form.querySelector('[name=price]').value);
-    fd.append('description', form.querySelector('[name=description]').value);
-    fd.append('featured', form.querySelector('[name=featured]').checked);
-    fd.append('active', form.querySelector('[name=active]').checked);
+    fd.append("name", form.querySelector("[name=name]").value);
+    fd.append("category", form.querySelector("[name=category]").value);
+    fd.append("productType", form.querySelector("[name=productType]").value);
+    fd.append("price", form.querySelector("[name=price]").value);
+    fd.append("description", form.querySelector("[name=description]").value);
+    fd.append("featured", form.querySelector("[name=featured]").checked);
+    fd.append("active", form.querySelector("[name=active]").checked);
 
     // Collect variants with colorHex
     const variants = [];
-    document.querySelectorAll('#variants-container .variant-row').forEach(row => {
-      const size = row.querySelector('.v-size').value.trim();
-      const color = row.querySelector('.v-color').value.trim();
-      const colorHex = row.querySelector('.v-colorhex').value;
-      const stock = parseInt(row.querySelector('.v-stock').value) || 0;
-      if (size || color) variants.push({ size, color, colorHex, stock });
-    });
-    fd.append('variants', JSON.stringify(variants));
+    document
+      .querySelectorAll("#variants-container .variant-row")
+      .forEach((row) => {
+        const size = row.querySelector(".v-size").value.trim();
+        const color = row.querySelector(".v-color").value.trim();
+        const colorHex = row.querySelector(".v-colorhex").value;
+        const stock = parseInt(row.querySelector(".v-stock").value) || 0;
+        if (size || color) variants.push({ size, color, colorHex, stock });
+      });
+    fd.append("variants", JSON.stringify(variants));
 
-    // Images
-    const imageInput = document.getElementById('product-images-input');
-    Array.from(imageInput.files).forEach(file => fd.append('images', file));
+    // General images (optional fallback)
+    const imageInput = document.getElementById("product-images-input");
+    if (imageInput && imageInput.files.length > 0) {
+      Array.from(imageInput.files).forEach((file) => fd.append("images", file));
+    }
 
-    const url = editingProductId ? `/products/${editingProductId}` : '/products';
-    const method = editingProductId ? 'PUT' : 'POST';
-    const headers = { 'Authorization': `Bearer ${token}` };
+    // Per-color images — one input per color section
+    document
+      .querySelectorAll("#color-images-container .color-img-section")
+      .forEach((sec) => {
+        const color = sec.dataset.color;
+        const input = sec.querySelector("input[type=file]");
+        if (input && input.files.length > 0) {
+          Array.from(input.files).forEach((file) =>
+            fd.append(`colorImg_${encodeURIComponent(color)}`, file),
+          );
+        }
+      });
+
+    // Send deleted image lists so the server can purge them
+    if (deletedGeneralImages.length > 0) {
+      fd.append("deleteGeneralImages", JSON.stringify(deletedGeneralImages));
+    }
+    if (Object.keys(deletedColorImages).length > 0) {
+      fd.append("deleteColorImages", JSON.stringify(deletedColorImages));
+    }
+
+    const url = editingProductId
+      ? `/products/${editingProductId}`
+      : "/products";
+    const method = editingProductId ? "PUT" : "POST";
+    const headers = { Authorization: `Bearer ${token}` };
     const res = await fetch(`${API}${url}`, { method, headers, body: fd });
     const data = await res.json();
     if (!data.success) throw new Error(data.message);
 
-    showToast(editingProductId ? 'Product updated!' : 'Product added!', 'success');
-    closeModal('product-modal');
+    showToast(
+      editingProductId ? "Product updated!" : "Product added!",
+      "success",
+    );
+    closeModal("product-modal");
     loadProducts();
   } catch (err) {
-    showMsg(msg, err.message, 'error');
+    showMsg(msg, err.message, "error");
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Save Product';
+    btn.textContent = "Save Product";
   }
 }
 
 async function deleteProduct(id, name) {
-  if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+  const ok = await showConfirm(
+    `"${name}"`,
+    "This will permanently remove the product and all its images.",
+  );
+  if (!ok) return;
   try {
-    await apiFetch(`/products/${id}`, 'DELETE');
-    showToast('Product deleted.', 'success');
+    await apiFetch(`/products/${id}`, "DELETE");
+    showToast("Product deleted.", "success");
     loadProducts();
-  } catch (err) { showToast(err.message, 'error'); }
+  } catch (err) {
+    showToast(err.message, "error");
+  }
 }
 
 // ===== CATEGORIES =====
 async function loadCategories() {
-  const list = document.getElementById('categories-list');
+  const list = document.getElementById("categories-list");
   list.innerHTML = '<p style="color:#888;font-size:13px;">Loading...</p>';
   try {
-    const { categories } = await apiFetch('/categories/admin/all');
+    const { categories } = await apiFetch("/categories/admin/all");
     renderCategories(categories);
   } catch (err) {
     list.innerHTML = `<p style="color:red;font-size:13px;">Error: ${err.message}</p>`;
@@ -521,12 +817,15 @@ async function loadCategories() {
 }
 
 function renderCategories(categories) {
-  const list = document.getElementById('categories-list');
+  const list = document.getElementById("categories-list");
   if (!categories || categories.length === 0) {
-    list.innerHTML = '<p style="color:#888;font-size:13px;">No categories yet.</p>';
+    list.innerHTML =
+      '<p style="color:#888;font-size:13px;">No categories yet.</p>';
     return;
   }
-  list.innerHTML = categories.map(cat => `
+  list.innerHTML = categories
+    .map(
+      (cat) => `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid #eee;border-radius:8px;margin-bottom:8px;background:#fafafa;">
       <div>
         <strong style="font-size:14px;">${cat.name}</strong>
@@ -534,67 +833,120 @@ function renderCategories(categories) {
       </div>
       <button class="icon-btn" onclick="deleteCategory('${cat._id}','${cat.name}')" style="color:#e74c3c;" title="Delete category">🗑</button>
     </div>
-  `).join('');
+  `,
+    )
+    .join("");
 }
 
 async function deleteCategory(id, name) {
-  if (!confirm(`Delete category "${name}"?\n\nNote: Existing products in this category will not be deleted, but they may not appear on the shop until reassigned.`)) return;
+  const ok = await showConfirm(
+    `"${name}"`,
+    "Products in this category will remain but may not appear in the shop until reassigned.",
+  );
+  if (!ok) return;
   try {
-    await apiFetch(`/categories/${id}`, 'DELETE');
-    showToast(`Category "${name}" deleted.`, 'success');
+    await apiFetch(`/categories/${id}`, "DELETE");
+    showToast(`Category "${name}" deleted.`, "success");
     loadCategories();
-  } catch (err) { showToast(err.message, 'error'); }
+  } catch (err) {
+    showToast(err.message, "error");
+  }
 }
 
 async function populateCategorySelect(selectedValue) {
-  const select = document.getElementById('product-category-select');
+  const select = document.getElementById("product-category-select");
   try {
-    const { categories } = await apiFetch('/categories/admin/all');
-    select.innerHTML = categories.map(cat =>
-      `<option value="${cat.slug}"${cat.slug === selectedValue ? ' selected' : ''}>${cat.name}</option>`
-    ).join('');
+    const { categories } = await apiFetch("/categories/admin/all");
+    select.innerHTML = categories
+      .map(
+        (cat) =>
+          `<option value="${cat.slug}"${cat.slug === selectedValue ? " selected" : ""}>${cat.name}</option>`,
+      )
+      .join("");
     if (selectedValue) select.value = selectedValue;
   } catch {
     select.innerHTML = '<option value="">Failed to load categories</option>';
   }
 }
 
-
 function closeModal(id) {
-  document.getElementById(id).classList.add('hidden');
+  document.getElementById(id).classList.add("hidden");
 }
 
-function showToast(msg, type = '') {
-  const t = document.getElementById('toast');
+function showToast(msg, type = "") {
+  const t = document.getElementById("toast");
   t.textContent = msg;
   t.className = `toast ${type}`;
-  t.classList.remove('hidden');
-  setTimeout(() => t.classList.add('hidden'), 3000);
+  t.classList.remove("hidden");
+  setTimeout(() => t.classList.add("hidden"), 3000);
 }
 
-function showMsg(el, msg, type = 'error') {
+function showMsg(el, msg, type = "error") {
   el.textContent = msg;
   el.className = `alert alert-${type}`;
-  el.classList.remove('hidden');
+  el.classList.remove("hidden");
 }
 
 function renderPagination(containerId, total, limit, currentP, onPage) {
   const pages = Math.ceil(total / limit);
   const container = document.getElementById(containerId);
-  if (pages <= 1) { container.innerHTML = ''; return; }
-  let html = '';
+  if (pages <= 1) {
+    container.innerHTML = "";
+    return;
+  }
+  let html = "";
   for (let i = 1; i <= pages; i++) {
-    html += `<button class="page-btn${i === currentP ? ' active' : ''}" onclick="(${onPage.toString()})(${i})">${i}</button>`;
+    html += `<button class="page-btn${i === currentP ? " active" : ""}" onclick="(${onPage.toString()})(${i})">${i}</button>`;
   }
   container.innerHTML = html;
 }
 
 function debounceLoadOrders() {
   clearTimeout(debounceTimer);
-  debounceTimer = setTimeout(() => { ordersPage = 1; loadOrders(); }, 400);
+  debounceTimer = setTimeout(() => {
+    ordersPage = 1;
+    loadOrders();
+  }, 400);
 }
 
 function debounceLoadProducts() {
   clearTimeout(debounceTimer);
-  debounceTimer = setTimeout(() => { productsPage = 1; loadProducts(); }, 400);
+  debounceTimer = setTimeout(() => {
+    productsPage = 1;
+    loadProducts();
+  }, 400);
+}
+
+function removeGeneralImage(btn, url) {
+  deletedGeneralImages.push(url);
+  btn.parentElement.remove();
+}
+
+// ===== CUSTOM CONFIRM MODAL =====
+let _confirmResolve = null;
+
+function showConfirm(itemName = "", message = "This action cannot be undone.") {
+  document.getElementById("confirm-item-name").textContent = itemName;
+  document.getElementById("confirm-message").textContent = message;
+  document.getElementById("confirm-modal").classList.remove("hidden");
+  document.getElementById("confirm-delete-btn").focus();
+  return new Promise((resolve) => {
+    _confirmResolve = resolve;
+  });
+}
+
+function confirmCancel() {
+  document.getElementById("confirm-modal").classList.add("hidden");
+  if (_confirmResolve) {
+    _confirmResolve(false);
+    _confirmResolve = null;
+  }
+}
+
+function confirmProceed() {
+  document.getElementById("confirm-modal").classList.add("hidden");
+  if (_confirmResolve) {
+    _confirmResolve(true);
+    _confirmResolve = null;
+  }
 }
