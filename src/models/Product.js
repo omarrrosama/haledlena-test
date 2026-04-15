@@ -19,6 +19,7 @@ const productSchema = new mongoose.Schema({
   slug: { type: String, trim: true, lowercase: true, unique: true },
   description: { type: String, trim: true },
   descriptionAr: { type: String, trim: true },
+  productCare: { type: String, trim: true },
   price: { type: Number, required: true, min: 0 },
   category: {
     type: String,
@@ -27,13 +28,17 @@ const productSchema = new mongoose.Schema({
   },
   productType: { type: String, trim: true }, // e.g. "pantalons", "tops", "jackets"
   images: [{ type: String }],         // fallback / general images
+  coverImage: { type: String, trim: true },
   colorImages: [colorImageSchema],    // per-color image sets
   variants: [variantSchema],
   featured: { type: Boolean, default: false },
+  homePosition: { type: Number, min: 1, max: 5 },
   active: { type: Boolean, default: true },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });
+
+productSchema.index({ homePosition: 1 }, { unique: true, sparse: true });
 
 
 // Virtual: total stock derived from variants (no redundant field)

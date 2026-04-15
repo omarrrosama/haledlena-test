@@ -63,6 +63,12 @@
           </svg>
           Products
         </a>
+        <a href="#" class="nav-item" data-page="homepage">
+          <svg viewBox="0 0 24 24">
+            <path d="M3 11l9-8 9 8v10a2 2 0 0 1-2 2h-4v-6H9v6H5a2 2 0 0 1-2-2V11z" />
+          </svg>
+          Homepage
+        </a>
         <a href="#" class="nav-item" data-page="categories">
           <svg viewBox="0 0 24 24">
             <path
@@ -263,6 +269,47 @@
           </div>
         </div>
 
+        <!-- HOMEPAGE PAGE -->
+        <div id="page-homepage" class="page hidden">
+          <div class="page-header">
+            <h1>Homepage</h1>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr;gap:24px;">
+            <!-- Hero Video Section -->
+            <div class="card">
+              <h3 style="margin-top:0;">Hero Video & Background</h3>
+              <p style="color:#888;font-size:13px;">Upload the main background video and its fallback image (used on mobile or if video fails to load). This is also used in the Explore page.</p>
+              <div id="homepage-hero-msg" class="alert hidden"></div>
+              <form id="homepage-hero-form" enctype="multipart/form-data">
+                <div class="form-group">
+                  <label>Video (MP4, WebM, up to 50MB)</label>
+                  <input type="file" name="heroVideo" accept="video/mp4,video/webm,video/quicktime">
+                  <div id="current-hero-video" style="margin-top:8px;font-size:13px;"></div>
+                </div>
+                <div class="form-group">
+                  <label>Fallback Image (JPG, PNG)</label>
+                  <input type="file" name="heroImage" accept="image/*">
+                  <div id="current-hero-image" style="margin-top:8px;font-size:13px;"></div>
+                </div>
+                <div class="modal-actions" style="justify-content:flex-start;">
+                  <button type="submit" class="btn btn-primary" id="homepage-hero-save-btn">Save Hero Video</button>
+                </div>
+              </form>
+            </div>
+
+            <!-- Product Slots Section -->
+            <div class="card">
+              <h3 style="margin-top:0;">Product Slots</h3>
+              <p style="color:#888;font-size:13px;margin-top:0;">Select exactly 5 products (slots 1–5). The product cover image will be used on the homepage, and clicking the image opens the product page.</p>
+              <div id="homepage-msg" class="alert hidden"></div>
+              <div id="homepage-slots" class="form-grid"></div>
+              <div class="modal-actions" style="justify-content:flex-start;">
+                <button class="btn btn-primary" id="homepage-save-btn" type="button">Save Homepage (5 slots)</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
 
         <!-- CATEGORIES PAGE -->
         <div id="page-categories" class="page hidden">
@@ -371,9 +418,13 @@
               <label>Description</label>
               <textarea name="description" rows="3"></textarea>
             </div>
+            <div class="form-group form-full">
+              <label>Product Care</label>
+              <textarea name="productCare" rows="5" placeholder="Write each point on a new line. Use indentation for sub-points."></textarea>
+            </div>
             <div class="form-group form-full" id="existing-images-container"></div>
             <div class="form-group form-full">
-              <label>Upload Images (max 50)</label>
+              <label>Upload Images (max 50) — click a thumbnail to set the Cover/Homepage image</label>
               <input type="file" name="images" accept="image/*" multiple id="product-images-input">
               <div id="image-preview" class="image-preview"></div>
             </div>
@@ -386,6 +437,22 @@
               <label class="checkbox-label">
                 <input type="checkbox" name="featured"> Featured
               </label>
+            </div>
+            <div class="form-group form-full">
+              <label class="checkbox-label">
+                <input type="checkbox" id="home-enabled"> Show this product on homepage (one of 5 slots)
+              </label>
+              <div id="home-slot-wrap" style="margin-top:10px;display:none;">
+                <label>Homepage Slot (1–5)</label>
+                <select name="homePosition" id="home-position-select">
+                  <option value="">Choose slot...</option>
+                  <option value="1">Slot 1</option>
+                  <option value="2">Slot 2</option>
+                  <option value="3">Slot 3</option>
+                  <option value="4">Slot 4</option>
+                  <option value="5">Slot 5</option>
+                </select>
+              </div>
             </div>
           </div>
 

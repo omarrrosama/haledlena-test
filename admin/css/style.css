@@ -712,6 +712,15 @@ body {
   border: 1px solid var(--border);
 }
 
+.cover-thumb {
+  cursor: pointer;
+  border: 2px solid transparent;
+}
+
+.cover-thumb.selected {
+  border-color: var(--accent);
+}
+
 /* ===== PAGINATION ===== */
 .pagination {
   display: flex;

@@ -8,6 +8,9 @@ let editingProductId = null;
 let debounceTimer;
 let deletedGeneralImages = []; // URLs of general images to remove on save
 let deletedColorImages = {}; // { colorName: [url, ...] } to remove on save
+let selectedCoverImageUrl = "";
+let selectedCoverUploadIndex = null;
+let homepageProductsCache = null;
 
 // ===== INIT =====
 document.addEventListener("DOMContentLoaded", () => {
@@ -120,6 +123,23 @@ document.addEventListener("DOMContentLoaded", () => {
     .addEventListener("submit", saveProduct);
   // Note: image preview listeners are added dynamically per color section
 
+  const productImagesInput = document.getElementById("product-images-input");
+  if (productImagesInput) {
+    productImagesInput.addEventListener("change", () => {
+      renderGeneralUploadPreview(productImagesInput.files || []);
+    });
+  }
+
+  const homepageSaveBtn = document.getElementById("homepage-save-btn");
+  if (homepageSaveBtn) {
+    homepageSaveBtn.addEventListener("click", saveHomepageSlots);
+  }
+
+  const homepageHeroForm = document.getElementById("homepage-hero-form");
+  if (homepageHeroForm) {
+    homepageHeroForm.addEventListener("submit", saveHomepageHero);
+  }
+
   // Auto-generate slug from name
   document.getElementById("cat-name").addEventListener("input", (e) => {
     const slugField = document.getElementById("cat-slug");
@@ -202,6 +222,7 @@ function navigateTo(page) {
     productsPage = 1;
     loadProducts();
   }
+  if (page === "homepage") loadHomepage();
   if (page === "categories") loadCategories();
 }
 
@@ -527,6 +548,25 @@ async function openProductModal(id = null) {
 
   deletedGeneralImages = [];
   deletedColorImages = {};
+  selectedCoverImageUrl = "";
+  selectedCoverUploadIndex = null;
+
+  const homeEnabled = document.getElementById("home-enabled");
+  const homeSlotWrap = document.getElementById("home-slot-wrap");
+  const homePositionSelect = document.getElementById("home-position-select");
+  if (homeEnabled && homeSlotWrap && homePositionSelect) {
+    homeEnabled.checked = false;
+    homePositionSelect.value = "";
+    homeSlotWrap.style.display = "none";
+    homeEnabled.onchange = () => {
+      if (homeEnabled.checked) {
+        homeSlotWrap.style.display = "block";
+      } else {
+        homePositionSelect.value = "";
+        homeSlotWrap.style.display = "none";
+      }
+    };
+  }
 
   if (id) {
     try {
@@ -541,14 +581,26 @@ async function openProductModal(id = null) {
       form.querySelector("[name=productType]").value = p.productType || "";
       form.querySelector("[name=price]").value = p.price || "";
       form.querySelector("[name=description]").value = p.description || "";
+      form.querySelector("[name=productCare]").value = p.productCare || "";
       form.querySelector("[name=featured]").checked = p.featured || false;
       form.querySelector("[name=active]").checked = p.active !== false;
+      if (homeEnabled && homeSlotWrap && homePositionSelect) {
+        const pos = p.homePosition ? String(p.homePosition) : "";
+        homeEnabled.checked = Boolean(pos);
+        homePositionSelect.value = pos;
+        homeSlotWrap.style.display = homeEnabled.checked ? "block" : "none";
+      }
+
+      selectedCoverImageUrl =
+        p.coverImage ||
+        (p.images && p.images.length > 0 ? p.images[0] : "") ||
+        "";
 
       // Show current general images with delete buttons
       if (p.images && p.images.length > 0) {
         const container = document.getElementById("existing-images-container");
         container.innerHTML = `
-          <p style="font-size:12px;color:#888;margin-bottom:6px;">Current general images (click ✕ to remove):</p>
+          <p style="font-size:12px;color:#888;margin-bottom:6px;">Current general images (click an image to set it as cover, click ✕ to remove):</p>
           <div id="existing-general-imgs" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
         `;
         const imgWrapper = container.querySelector("#existing-general-imgs");
@@ -557,10 +609,16 @@ async function openProductModal(id = null) {
           const wrap = document.createElement("div");
           wrap.style.cssText = "position:relative;display:inline-block;";
           wrap.innerHTML = `
-            <img src="${img}" style="width:64px;height:64px;object-fit:cover;border-radius:4px;border:1px solid #eee;display:block;">
+            <img src="${img}" class="cover-thumb${img === selectedCoverImageUrl ? " selected" : ""}" data-url="${img}" style="width:64px;height:64px;object-fit:cover;border-radius:4px;display:block;">
             <button type="button" onclick="removeGeneralImage(this,'${img}')" style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;background:#e74c3c;color:#fff;border:none;cursor:pointer;font-size:10px;line-height:18px;text-align:center;padding:0;">✕</button>
           `;
           imgWrapper.appendChild(wrap);
+        });
+
+        imgWrapper.querySelectorAll("img.cover-thumb").forEach((imgEl) => {
+          imgEl.addEventListener("click", () => {
+            setCoverFromExisting(imgEl.dataset.url);
+          });
         });
       }
 
@@ -577,6 +635,49 @@ async function openProductModal(id = null) {
     await populateCategorySelect("");
     addVariantRow();
   }
+}
+
+function setCoverFromExisting(url) {
+  selectedCoverImageUrl = url || "";
+  selectedCoverUploadIndex = null;
+  document
+    .querySelectorAll("#existing-general-imgs img.cover-thumb")
+    .forEach((img) => {
+      img.classList.toggle(
+        "selected",
+        img.dataset.url === selectedCoverImageUrl,
+      );
+    });
+  document
+    .querySelectorAll("#image-preview img.cover-thumb")
+    .forEach((img) => img.classList.remove("selected"));
+}
+
+function setCoverFromUpload(index) {
+  selectedCoverImageUrl = "";
+  selectedCoverUploadIndex = typeof index === "number" ? index : null;
+  document
+    .querySelectorAll("#existing-general-imgs img.cover-thumb")
+    .forEach((img) => img.classList.remove("selected"));
+  document.querySelectorAll("#image-preview img.cover-thumb").forEach((img) => {
+    img.classList.toggle("selected", parseInt(img.dataset.index, 10) === index);
+  });
+}
+
+function renderGeneralUploadPreview(fileList) {
+  const preview = document.getElementById("image-preview");
+  if (!preview) return;
+  preview.innerHTML = "";
+  const files = Array.from(fileList || []);
+  files.forEach((file, idx) => {
+    const img = document.createElement("img");
+    img.src = URL.createObjectURL(file);
+    img.className =
+      "cover-thumb" + (selectedCoverUploadIndex === idx ? " selected" : "");
+    img.dataset.index = String(idx);
+    img.addEventListener("click", () => setCoverFromUpload(idx));
+    preview.appendChild(img);
+  });
 }
 
 function addVariantRow(v = {}) {
@@ -723,8 +824,25 @@ async function saveProduct(e) {
     fd.append("productType", form.querySelector("[name=productType]").value);
     fd.append("price", form.querySelector("[name=price]").value);
     fd.append("description", form.querySelector("[name=description]").value);
+    fd.append("productCare", form.querySelector("[name=productCare]").value);
     fd.append("featured", form.querySelector("[name=featured]").checked);
     fd.append("active", form.querySelector("[name=active]").checked);
+    const homeEnabled = document.getElementById("home-enabled");
+    const homePosSelect = form.querySelector("[name=homePosition]");
+    if (homePosSelect) {
+      if (homeEnabled && homeEnabled.checked) {
+        if (!homePosSelect.value) {
+          throw new Error("Choose a homepage slot (1–5) for this product.");
+        }
+        fd.append("homePosition", homePosSelect.value);
+      } else {
+        fd.append("homePosition", "");
+      }
+    }
+
+    if (selectedCoverImageUrl) fd.append("coverImage", selectedCoverImageUrl);
+    if (selectedCoverUploadIndex !== null)
+      fd.append("coverImageUploadIndex", String(selectedCoverUploadIndex));
 
     // Collect variants with colorHex
     const variants = [];
@@ -802,6 +920,240 @@ async function deleteProduct(id, name) {
   } catch (err) {
     showToast(err.message, "error");
   }
+}
+
+// ===== HOMEPAGE =====
+async function loadHomepage() {
+  const msg = document.getElementById("homepage-msg");
+  if (msg) msg.classList.add("hidden");
+
+  const heroMsg = document.getElementById("homepage-hero-msg");
+  if (heroMsg) heroMsg.classList.add("hidden");
+
+  const slotsEl = document.getElementById("homepage-slots");
+  if (slotsEl)
+    slotsEl.innerHTML = `<p style="color:#888;font-size:13px;">Loading...</p>`;
+
+  try {
+    // Load hero settings
+    const heroRes = await apiFetch("/settings/homepage-hero");
+    if (heroRes && heroRes.value) {
+      const v = heroRes.value;
+      const vidEl = document.getElementById("current-hero-video");
+      const imgEl = document.getElementById("current-hero-image");
+      if (vidEl)
+        vidEl.innerHTML = v.heroVideo
+          ? `Current: <a href="${v.heroVideo}" target="_blank" style="color:var(--accent);">View Video</a>`
+          : "No video uploaded.";
+      if (imgEl)
+        imgEl.innerHTML = v.heroImage
+          ? `Current: <a href="${v.heroImage}" target="_blank" style="color:var(--accent);">View Image</a>`
+          : "No fallback image uploaded.";
+    } else {
+      const vidEl = document.getElementById("current-hero-video");
+      const imgEl = document.getElementById("current-hero-image");
+      if (vidEl) vidEl.innerHTML = "No video uploaded.";
+      if (imgEl) imgEl.innerHTML = "No fallback image uploaded.";
+    }
+
+    if (!homepageProductsCache) {
+      homepageProductsCache = await fetchAllProductsForHomepage();
+    }
+    const { items } = await apiFetch("/products/homepage/admin");
+    renderHomepageSlots(homepageProductsCache, items || []);
+  } catch (err) {
+    if (slotsEl) slotsEl.innerHTML = "";
+    if (msg) showMsg(msg, err.message, "error");
+  }
+}
+
+async function saveHomepageHero(e) {
+  e.preventDefault();
+  const form = e.target;
+  const msg = document.getElementById("homepage-hero-msg");
+  const btn = document.getElementById("homepage-hero-save-btn");
+  if (msg) msg.classList.add("hidden");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Saving...";
+  }
+
+  try {
+    const fd = new FormData();
+    const videoInput = form.querySelector("[name=heroVideo]");
+    const imageInput = form.querySelector("[name=heroImage]");
+
+    if (videoInput.files && videoInput.files.length > 0) {
+      fd.append("heroVideo", videoInput.files[0]);
+    }
+    if (imageInput.files && imageInput.files.length > 0) {
+      fd.append("heroImage", imageInput.files[0]);
+    }
+
+    // value is empty since files will be stored directly via route handling
+    fd.append("value", JSON.stringify({}));
+
+    await fetch(`${API}/settings/homepage-hero`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}` },
+      body: fd,
+    });
+
+    showToast("Homepage hero saved!", "success");
+    // Clear inputs
+    videoInput.value = "";
+    imageInput.value = "";
+    loadHomepage();
+  } catch (err) {
+    if (msg) showMsg(msg, err.message, "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Save Hero Video";
+    }
+  }
+}
+
+async function fetchAllProductsForHomepage() {
+  const limit = 200;
+  let page = 1;
+  let all = [];
+  while (true) {
+    const { products, total } = await apiFetch(
+      `/products/admin/all?page=${page}&limit=${limit}`,
+    );
+    all = all.concat(products || []);
+    if (all.length >= (total || 0)) break;
+    if (!products || products.length === 0) break;
+    page += 1;
+    if (page > 50) break;
+  }
+  return all;
+}
+
+function pickProductCoverFromAdminProduct(p) {
+  if (!p) return "";
+  if (p.coverImage) return p.coverImage;
+  if (p.images && p.images.length > 0) return p.images[0];
+  if (p.colorImages && p.colorImages.length > 0) {
+    const first = p.colorImages.find((ci) => (ci.images || []).length > 0);
+    if (first && first.images && first.images.length > 0)
+      return first.images[0];
+  }
+  return "";
+}
+
+function renderHomepageSlots(products, currentItems) {
+  const slotsEl = document.getElementById("homepage-slots");
+  if (!slotsEl) return;
+  const currentByPos = new Map();
+  (currentItems || []).forEach((it) =>
+    currentByPos.set(it.position, String(it.productId)),
+  );
+
+  const optionsHtml = (products || [])
+    .map((p) => {
+      const suffix = p.active === false ? " (inactive)" : "";
+      return `<option value="${p._id}">${escapeHtml(p.name || p.slug || p._id)}${suffix}</option>`;
+    })
+    .join("");
+
+  slotsEl.innerHTML = [1, 2, 3, 4, 5]
+    .map(
+      (pos) => `
+        <div class="form-group form-full">
+          <label>Homepage Slot ${pos}</label>
+          <select id="homepage-slot-${pos}">
+            <option value="">Select product...</option>
+            ${optionsHtml}
+          </select>
+          <div id="homepage-preview-${pos}" style="display:flex;gap:10px;align-items:center;margin-top:10px;"></div>
+        </div>
+      `,
+    )
+    .join("");
+
+  [1, 2, 3, 4, 5].forEach((pos) => {
+    const select = document.getElementById(`homepage-slot-${pos}`);
+    if (!select) return;
+    const current = currentByPos.get(pos) || "";
+    select.value = current;
+    select.addEventListener("change", () =>
+      renderHomepagePreviewForSlot(pos, products),
+    );
+    renderHomepagePreviewForSlot(pos, products);
+  });
+}
+
+function renderHomepagePreviewForSlot(pos, products) {
+  const select = document.getElementById(`homepage-slot-${pos}`);
+  const preview = document.getElementById(`homepage-preview-${pos}`);
+  if (!select || !preview) return;
+  const productId = select.value;
+  const p = (products || []).find((x) => String(x._id) === String(productId));
+  if (!p) {
+    preview.innerHTML = `<span style="color:#888;font-size:12px;">No product selected.</span>`;
+    return;
+  }
+  const imgUrl = pickProductCoverFromAdminProduct(p);
+  preview.innerHTML = `
+    ${
+      imgUrl
+        ? `<img src="${imgUrl}" style="width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid #eee;">`
+        : `<div style="width:64px;height:64px;border-radius:6px;border:1px solid #eee;display:flex;align-items:center;justify-content:center;color:#888;font-size:12px;">No img</div>`
+    }
+    <div>
+      <div style="font-weight:600;">${escapeHtml(p.name || "")}</div>
+      <div style="color:#888;font-size:12px;">/${escapeHtml(p.slug || "")}</div>
+    </div>
+  `;
+}
+
+async function saveHomepageSlots() {
+  const msg = document.getElementById("homepage-msg");
+  const btn = document.getElementById("homepage-save-btn");
+  if (msg) msg.classList.add("hidden");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Saving...";
+  }
+  try {
+    const slots = [1, 2, 3, 4, 5].map((pos) => {
+      const select = document.getElementById(`homepage-slot-${pos}`);
+      return { position: pos, productId: select ? select.value : "" };
+    });
+
+    if (slots.some((s) => !s.productId)) {
+      throw new Error("Please select a product for all 5 homepage slots.");
+    }
+    const unique = new Set(slots.map((s) => s.productId));
+    if (unique.size !== 5) {
+      throw new Error(
+        "Each homepage slot must be a different product (no duplicates).",
+      );
+    }
+
+    await apiFetch("/products/homepage", "PUT", { slots });
+    showToast("Homepage updated!", "success");
+    homepageProductsCache = null;
+    loadHomepage();
+  } catch (err) {
+    if (msg) showMsg(msg, err.message, "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Save Homepage (5 slots)";
+    }
+  }
+}
+
+function escapeHtml(str) {
+  return String(str || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 // ===== CATEGORIES =====
@@ -920,6 +1272,7 @@ function debounceLoadProducts() {
 function removeGeneralImage(btn, url) {
   deletedGeneralImages.push(url);
   btn.parentElement.remove();
+  if (selectedCoverImageUrl === url) selectedCoverImageUrl = "";
 }
 
 // ===== CUSTOM CONFIRM MODAL =====
