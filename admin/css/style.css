@@ -721,6 +721,35 @@ body {
   border-color: var(--accent);
 }
 
+/* Drag and drop styles */
+.image-preview,
+#existing-general-imgs,
+.existing-color-imgs,
+.color-img-preview {
+  cursor: grab;
+}
+
+.image-preview .sortable-ghost,
+#existing-general-imgs .sortable-ghost,
+.existing-color-imgs .sortable-ghost,
+.color-img-preview .sortable-ghost {
+  opacity: 0.4;
+}
+
+.image-preview .sortable-chosen,
+#existing-general-imgs .sortable-chosen,
+.existing-color-imgs .sortable-chosen,
+.color-img-preview .sortable-chosen {
+  cursor: grabbing;
+}
+
+/* Wrapper for images to allow drag with delete button */
+.img-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+
 /* ===== PAGINATION ===== */
 .pagination {
   display: flex;

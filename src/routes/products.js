@@ -12,7 +12,8 @@ function pickCoverImage({ coverImage, images, colorImages }) {
   if (images && images.length > 0) return images[0];
   if (colorImages && colorImages.length > 0) {
     const first = colorImages.find((ci) => (ci.images || []).length > 0);
-    if (first && first.images && first.images.length > 0) return first.images[0];
+    if (first && first.images && first.images.length > 0)
+      return first.images[0];
   }
   return "";
 }
@@ -293,12 +294,58 @@ router.post("/", protect, upload.any(), async (req, res) => {
         }
       });
     }
-    if (generalImages.length > 0) data.images = generalImages;
+    // Deduplicate general images
+    const seenGeneralPost = new Set();
+    const uniqueGeneralImages = generalImages.filter((img) => {
+      if (seenGeneralPost.has(img)) return false;
+      seenGeneralPost.add(img);
+      return true;
+    });
+    if (uniqueGeneralImages.length > 0) data.images = uniqueGeneralImages;
 
-    // Build colorImages array
-    const colorImages = Object.entries(colorImageMap).map(
-      ([color, images]) => ({ color, images }),
-    );
+    // Build colorImages array - use colorImageOrder if available
+    let colorImages = [];
+    let colorImageOrder = {};
+    if (data.colorImageOrder) {
+      try {
+        colorImageOrder =
+          typeof data.colorImageOrder === "string"
+            ? JSON.parse(data.colorImageOrder)
+            : data.colorImageOrder;
+      } catch (e) {
+        // Ignore invalid JSON
+      }
+    }
+
+    if (Object.keys(colorImageOrder).length > 0) {
+      colorImages = Object.entries(colorImageOrder).map(([color, info]) => {
+        // Combine existing and new images
+        let images = [
+          ...(info.existing || []),
+          ...(colorImageMap[color] || []),
+        ];
+        // Deduplicate
+        const seen = new Set();
+        images = images.filter((img) => {
+          if (seen.has(img)) return false;
+          seen.add(img);
+          return true;
+        });
+        return { color, images };
+      });
+    } else {
+      // Fall back to original behavior if no order provided
+      colorImages = Object.entries(colorImageMap).map(([color, images]) => {
+        // Deduplicate
+        const seen = new Set();
+        const uniqueImages = images.filter((img) => {
+          if (seen.has(img)) return false;
+          seen.add(img);
+          return true;
+        });
+        return { color, images: uniqueImages };
+      });
+    }
     if (colorImages.length > 0) data.colorImages = colorImages;
 
     const homePosRaw = data.homePosition;
@@ -308,7 +355,8 @@ router.post("/", protect, upload.any(), async (req, res) => {
         if (![1, 2, 3, 4, 5].includes(parsed)) {
           return res.status(400).json({
             success: false,
-            message: "Homepage position must be 1, 2, 3, 4, 5 (or leave blank).",
+            message:
+              "Homepage position must be 1, 2, 3, 4, 5 (or leave blank).",
           });
         }
         await Product.updateOne(
@@ -332,22 +380,20 @@ router.post("/", protect, upload.any(), async (req, res) => {
     if (data.category) {
       const cat = await Category.findOne({ slug: data.category });
       if (!cat)
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: `Category "${data.category}" does not exist.`,
-          });
+        return res.status(400).json({
+          success: false,
+          message: `Category "${data.category}" does not exist.`,
+        });
     }
 
     const coverImageUploadIndex = parseInt(data.coverImageUploadIndex, 10);
     if (
       !Number.isNaN(coverImageUploadIndex) &&
-      generalImages[coverImageUploadIndex]
+      uniqueGeneralImages[coverImageUploadIndex]
     ) {
-      data.coverImage = generalImages[coverImageUploadIndex];
+      data.coverImage = uniqueGeneralImages[coverImageUploadIndex];
     } else if (data.coverImage && typeof data.coverImage === "string") {
-      if (!generalImages.includes(data.coverImage)) {
+      if (!uniqueGeneralImages.includes(data.coverImage)) {
         delete data.coverImage;
       }
     }
@@ -355,7 +401,7 @@ router.post("/", protect, upload.any(), async (req, res) => {
     if (!data.coverImage) {
       data.coverImage = pickCoverImage({
         coverImage: "",
-        images: generalImages,
+        images: uniqueGeneralImages,
         colorImages: data.colorImages || [],
       });
     }
@@ -387,6 +433,26 @@ router.put("/:id", protect, upload.any(), async (req, res) => {
 
     if (data.variants && typeof data.variants === "string")
       data.variants = JSON.parse(data.variants);
+
+    // Parse ordered existing images and color image order
+    let orderedExistingImages = null;
+    let colorImageOrder = {};
+    if (data.orderedExistingImages) {
+      try {
+        orderedExistingImages =
+          typeof data.orderedExistingImages === "string"
+            ? JSON.parse(data.orderedExistingImages)
+            : data.orderedExistingImages;
+      } catch {}
+    }
+    if (data.colorImageOrder) {
+      try {
+        colorImageOrder =
+          typeof data.colorImageOrder === "string"
+            ? JSON.parse(data.colorImageOrder)
+            : data.colorImageOrder;
+      } catch {}
+    }
 
     // Parse deletion lists sent from the admin frontend
     let deleteGeneralImages = [];
@@ -463,8 +529,12 @@ router.put("/:id", protect, upload.any(), async (req, res) => {
       });
     }
 
-    // --- General images: start from existing, remove deleted, add new uploads ---
-    let generalImages = [...(product.images || [])];
+    // --- General images: use orderedExistingImages if available, then remove deleted, then add new ---
+    let generalImages = orderedExistingImages
+      ? [...orderedExistingImages]
+      : [...(product.images || [])];
+
+    // Filter out deleted images and remove from disk
     if (deleteGeneralImages.length > 0) {
       generalImages = generalImages.filter((img) => {
         if (deleteGeneralImages.includes(img)) {
@@ -482,6 +552,16 @@ router.put("/:id", protect, upload.any(), async (req, res) => {
         return true;
       });
     }
+
+    // Deduplicate general images to avoid duplicates
+    const seenGeneral = new Set();
+    generalImages = generalImages.filter((img) => {
+      if (seenGeneral.has(img)) return false;
+      seenGeneral.add(img);
+      return true;
+    });
+
+    // Add new uploads
     generalImages = [...generalImages, ...newGeneralImages];
     data.images = generalImages;
 
@@ -492,7 +572,8 @@ router.put("/:id", protect, upload.any(), async (req, res) => {
         if (![1, 2, 3, 4, 5].includes(parsed)) {
           return res.status(400).json({
             success: false,
-            message: "Homepage position must be 1, 2, 3, 4, 5 (or leave blank).",
+            message:
+              "Homepage position must be 1, 2, 3, 4, 5 (or leave blank).",
           });
         }
         await Product.updateOne(
@@ -505,8 +586,10 @@ router.put("/:id", protect, upload.any(), async (req, res) => {
       }
     }
 
-    // --- Color images: start from existing, remove deleted, add new uploads ---
+    // --- Color images: use colorImageOrder if available ---
     const existingColorMap = {};
+
+    // Initialize with existing images
     (product.colorImages || []).forEach((ci) => {
       existingColorMap[ci.color] = [...(ci.images || [])];
     });
@@ -550,25 +633,97 @@ router.put("/:id", protect, upload.any(), async (req, res) => {
       }
     });
 
-    // Append newly uploaded color images
-    Object.entries(colorImageMap).forEach(([color, imgs]) => {
-      existingColorMap[color] = [...(existingColorMap[color] || []), ...imgs];
-    });
+    // Build final color images
+    let colorImagesEntries = [];
+    const colorOrderKeys = Object.keys(colorImageOrder);
+    if (colorOrderKeys.length > 0) {
+      // Use the order from colorImageOrder
+      colorImagesEntries = colorOrderKeys.map((color) => {
+        const info = colorImageOrder[color];
+        // Use existingColorMap's images (modified by rename and delete operations)
+        // but maintain the order from info.existing
+        let existing = existingColorMap[color] || [];
+        // Keep the order from info.existing, only including images present in existingColorMap
+        let images = (info.existing || []).filter((img) =>
+          existing.includes(img),
+        );
+        // Add remaining images from existingColorMap not in info.existing
+        const remaining = existing.filter((img) => !images.includes(img));
+        images = [...images, ...remaining];
+        // Filter out deleted images
+        if (deleteColorImages[color]) {
+          images = images.filter(
+            (img) => !deleteColorImages[color].includes(img),
+          );
+        }
+        // Deduplicate images to avoid duplicates
+        const seen = new Set();
+        images = images.filter((img) => {
+          if (seen.has(img)) return false;
+          seen.add(img);
+          return true;
+        });
+        // Add new uploads for this color
+        if (colorImageMap[color]) {
+          images = [...images, ...colorImageMap[color]];
+        }
+        return { color, images };
+      });
+      // Add any colors from existingColorMap not in colorImageOrder
+      const addedColors = new Set(colorOrderKeys);
+      Object.entries(existingColorMap).forEach(([color, images]) => {
+        if (!addedColors.has(color)) {
+          // Filter out deleted images
+          let finalImages = images;
+          if (deleteColorImages[color]) {
+            finalImages = finalImages.filter(
+              (img) => !deleteColorImages[color].includes(img),
+            );
+          }
+          // Deduplicate
+          const seen = new Set();
+          finalImages = finalImages.filter((img) => {
+            if (seen.has(img)) return false;
+            seen.add(img);
+            return true;
+          });
+          // Add new images
+          if (colorImageMap[color]) {
+            finalImages = [...finalImages, ...colorImageMap[color]];
+          }
+          colorImagesEntries.push({ color, images: finalImages });
+        }
+      });
+    } else {
+      // Fallback: append new uploads to existing color images
+      Object.entries(colorImageMap).forEach(([color, imgs]) => {
+        existingColorMap[color] = [...(existingColorMap[color] || []), ...imgs];
+      });
 
-    const allowedColors = new Set(
-      (data.variants || []).map((v) => (v.color || "").trim()).filter(Boolean),
-    );
-    const colorImagesEntries = Object.entries(existingColorMap).filter(
-      ([color]) => {
-        if (allowedColors.size === 0) return true;
-        return allowedColors.has(color);
-      },
-    );
+      const allowedColors = new Set(
+        (data.variants || [])
+          .map((v) => (v.color || "").trim())
+          .filter(Boolean),
+      );
 
-    data.colorImages = colorImagesEntries.map(([color, images]) => ({
-      color,
-      images,
-    }));
+      colorImagesEntries = Object.entries(existingColorMap)
+        .filter(([color]) => {
+          if (allowedColors.size === 0) return true;
+          return allowedColors.has(color);
+        })
+        .map(([color, images]) => {
+          // Deduplicate images to avoid duplicates
+          const seen = new Set();
+          const finalImages = images.filter((img) => {
+            if (seen.has(img)) return false;
+            seen.add(img);
+            return true;
+          });
+          return { color, images: finalImages };
+        });
+    }
+
+    data.colorImages = colorImagesEntries;
 
     const coverImageUploadIndex = parseInt(data.coverImageUploadIndex, 10);
     if (
@@ -580,7 +735,10 @@ router.put("/:id", protect, upload.any(), async (req, res) => {
       if (!generalImages.includes(data.coverImage)) {
         delete data.coverImage;
       }
-    } else if (product.coverImage && generalImages.includes(product.coverImage)) {
+    } else if (
+      product.coverImage &&
+      generalImages.includes(product.coverImage)
+    ) {
       data.coverImage = product.coverImage;
     }
 
@@ -598,7 +756,21 @@ router.put("/:id", protect, upload.any(), async (req, res) => {
     if (data.active !== undefined)
       data.active = data.active !== "false" && data.active !== false;
 
-    Object.assign(product, data);
+    // Explicitly update each field to avoid Mongoose array merging issues
+    product.name = data.name;
+    product.category = data.category;
+    product.productType = data.productType;
+    product.price = data.price;
+    product.description = data.description;
+    product.productCare = data.productCare;
+    product.featured = data.featured;
+    product.active = data.active;
+    product.homePosition = data.homePosition;
+    product.variants = data.variants;
+    product.images = data.images; // Explicitly replace images array
+    product.colorImages = data.colorImages; // Explicitly replace colorImages array
+    product.coverImage = data.coverImage;
+
     await product.save();
     res.json({ success: true, product });
   } catch (err) {

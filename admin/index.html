@@ -6,7 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Haled Lena — Admin Panel</title>
   <link rel="stylesheet" href="/admin/css/style.css">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.3/Sortable.min.js"></script>
 </head>
 
 <body>
@@ -275,6 +276,23 @@
             <h1>Homepage</h1>
           </div>
           <div style="display:grid;grid-template-columns:1fr;gap:24px;">
+            <!-- Navbar Menu Image Section -->
+            <div class="card">
+              <h3 style="margin-top:0;">Navbar Menu Image</h3>
+              <p style="color:#888;font-size:13px;">Upload the image that appears on the right side of the fullscreen hamburger menu.</p>
+              <div id="navbar-menu-image-msg" class="alert hidden"></div>
+              <form id="navbar-menu-image-form" enctype="multipart/form-data">
+                <div class="form-group">
+                  <label>Menu Image (JPG, PNG)</label>
+                  <input type="file" name="menuImage" accept="image/*" id="navbar-menu-image-input">
+                  <div id="current-navbar-menu-image" style="margin-top:8px;"></div>
+                </div>
+                <div class="modal-actions" style="justify-content:flex-start;">
+                  <button type="submit" class="btn btn-primary" id="navbar-menu-image-save-btn">Save Menu Image</button>
+                </div>
+              </form>
+            </div>
+
             <!-- Hero Video Section -->
             <div class="card">
               <h3 style="margin-top:0;">Hero Video & Background</h3>

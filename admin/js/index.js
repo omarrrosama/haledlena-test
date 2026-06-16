@@ -11,6 +11,9 @@ let deletedColorImages = {}; // { colorName: [url, ...] } to remove on save
 let selectedCoverImageUrl = "";
 let selectedCoverUploadIndex = null;
 let homepageProductsCache = null;
+let currentNewFiles = []; // Track current new files for reordering
+let currentExistingImages = []; // Track existing images for reordering
+let currentColorImagesMap = {}; // { color: { existing: [], new: [] } }
 
 // ===== INIT =====
 document.addEventListener("DOMContentLoaded", () => {
@@ -138,6 +141,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const homepageHeroForm = document.getElementById("homepage-hero-form");
   if (homepageHeroForm) {
     homepageHeroForm.addEventListener("submit", saveHomepageHero);
+  }
+
+  const navbarMenuImageForm = document.getElementById("navbar-menu-image-form");
+  if (navbarMenuImageForm) {
+    navbarMenuImageForm.addEventListener("submit", saveNavbarMenuImage);
   }
 
   // Auto-generate slug from name
@@ -550,6 +558,7 @@ async function openProductModal(id = null) {
   deletedColorImages = {};
   selectedCoverImageUrl = "";
   selectedCoverUploadIndex = null;
+  currentColorImagesMap = {};
 
   const homeEnabled = document.getElementById("home-enabled");
   const homeSlotWrap = document.getElementById("home-slot-wrap");
@@ -598,35 +607,58 @@ async function openProductModal(id = null) {
 
       // Show current general images with delete buttons
       if (p.images && p.images.length > 0) {
+        currentExistingImages = [...p.images]; // Start with original order
         const container = document.getElementById("existing-images-container");
         container.innerHTML = `
           <p style="font-size:12px;color:#888;margin-bottom:6px;">Current general images (click an image to set it as cover, click ✕ to remove):</p>
           <div id="existing-general-imgs" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
         `;
-        const imgWrapper = container.querySelector("#existing-general-imgs");
+        const imgContainer = container.querySelector("#existing-general-imgs");
         deletedGeneralImages = [];
-        p.images.forEach((img) => {
+
+        currentExistingImages.forEach((img, idx) => {
           const wrap = document.createElement("div");
-          wrap.style.cssText = "position:relative;display:inline-block;";
+          wrap.className = "img-wrapper";
+          wrap.dataset.url = img;
           wrap.innerHTML = `
-            <img src="${img}" class="cover-thumb${img === selectedCoverImageUrl ? " selected" : ""}" data-url="${img}" style="width:64px;height:64px;object-fit:cover;border-radius:4px;display:block;">
-            <button type="button" onclick="removeGeneralImage(this,'${img}')" style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;background:#e74c3c;color:#fff;border:none;cursor:pointer;font-size:10px;line-height:18px;text-align:center;padding:0;">✕</button>
+            <img src="${img}" class="cover-thumb${img === selectedCoverImageUrl ? " selected" : ""}" data-url="${img}" style="width:64px;height:64px;object-fit:cover;border-radius:4px;display:block;cursor:pointer;">
+            <button type="button" data-url="${img}" style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;background:#e74c3c;color:#fff;border:none;cursor:pointer;font-size:10px;line-height:18px;text-align:center;padding:0;">✕</button>
           `;
-          imgWrapper.appendChild(wrap);
-        });
 
-        imgWrapper.querySelectorAll("img.cover-thumb").forEach((imgEl) => {
-          imgEl.addEventListener("click", () => {
-            setCoverFromExisting(imgEl.dataset.url);
+          // Click to set cover
+          wrap.querySelector("img").addEventListener("click", (e) => {
+            e.stopPropagation();
+            setCoverFromExisting(img);
           });
+
+          // Click to remove
+          wrap.querySelector("button").addEventListener("click", (e) => {
+            e.stopPropagation();
+            removeGeneralImage(wrap, img);
+          });
+
+          imgContainer.appendChild(wrap);
+        });
+
+        // Make sortable
+        new Sortable(imgContainer, {
+          animation: 150,
+          ghostClass: "sortable-ghost",
+          chosenClass: "sortable-chosen",
+          onEnd: function (evt) {
+            // Reorder currentExistingImages
+            const movedItem = currentExistingImages.splice(evt.oldIndex, 1)[0];
+            currentExistingImages.splice(evt.newIndex, 0, movedItem);
+          },
         });
       }
 
-      // Load variants first, then build color-image sections with existing colorImages
-      (p.variants || []).forEach((v) => addVariantRow(v));
-      if (p.colorImages && p.colorImages.length > 0) {
-        buildColorImagesSections(p.colorImages);
-      }
+      // Load variants without calling buildColorImagesSections each time
+      (p.variants || []).forEach((v) => {
+        addVariantRowWithoutRebuild(v);
+      });
+      // Now build color images sections once with existing color images
+      buildColorImagesSections(p.colorImages);
     } catch (err) {
       showToast("Failed to load product: " + err.message, "error");
     }
@@ -668,19 +700,53 @@ function renderGeneralUploadPreview(fileList) {
   const preview = document.getElementById("image-preview");
   if (!preview) return;
   preview.innerHTML = "";
-  const files = Array.from(fileList || []);
-  files.forEach((file, idx) => {
+  currentNewFiles = Array.from(fileList || []);
+
+  currentNewFiles.forEach((file, idx) => {
+    const wrapper = document.createElement("div");
+    wrapper.className = "img-wrapper";
+    wrapper.dataset.index = String(idx);
+
     const img = document.createElement("img");
     img.src = URL.createObjectURL(file);
     img.className =
       "cover-thumb" + (selectedCoverUploadIndex === idx ? " selected" : "");
     img.dataset.index = String(idx);
-    img.addEventListener("click", () => setCoverFromUpload(idx));
-    preview.appendChild(img);
+    img.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setCoverFromUpload(parseInt(wrapper.dataset.index));
+    });
+
+    wrapper.appendChild(img);
+    preview.appendChild(wrapper);
+  });
+
+  // Make sortable
+  new Sortable(preview, {
+    animation: 150,
+    ghostClass: "sortable-ghost",
+    chosenClass: "sortable-chosen",
+    onEnd: function (evt) {
+      // Reorder currentNewFiles
+      const movedItem = currentNewFiles.splice(evt.oldIndex, 1)[0];
+      currentNewFiles.splice(evt.newIndex, 0, movedItem);
+
+      // Update data-index on all wrappers
+      const wrappers = preview.querySelectorAll(".img-wrapper");
+      wrappers.forEach((w, i) => {
+        w.dataset.index = String(i);
+        w.querySelector("img").dataset.index = String(i);
+        // Update selected state if needed
+        w.querySelector("img").classList.toggle(
+          "selected",
+          selectedCoverUploadIndex === i,
+        );
+      });
+    },
   });
 }
 
-function addVariantRow(v = {}) {
+function addVariantRowWithoutRebuild(v = {}) {
   const div = document.createElement("div");
   div.className = "variant-row";
   div.innerHTML = `
@@ -698,6 +764,10 @@ function addVariantRow(v = {}) {
     .querySelector(".v-color")
     .addEventListener("blur", buildColorImagesSections);
   document.getElementById("variants-container").appendChild(div);
+}
+
+function addVariantRow(v = {}) {
+  addVariantRowWithoutRebuild(v);
   buildColorImagesSections();
 }
 
@@ -723,6 +793,15 @@ function buildColorImagesSections(existingColorImages = null) {
     if (input && input.files.length > 0) savedFiles[color] = input.files;
   });
 
+  // Preserve currentColorImagesMap state
+  const preservedColorState = {};
+  Object.keys(currentColorImagesMap).forEach((c) => {
+    preservedColorState[c] = {
+      existing: [...(currentColorImagesMap[c]?.existing || [])],
+      newFiles: [...(currentColorImagesMap[c]?.newFiles || [])],
+    };
+  });
+
   // Use passed existingColorImages or whatever is currently stored in the section
   const existingMap = {};
   if (existingColorImages) {
@@ -742,11 +821,30 @@ function buildColorImagesSections(existingColorImages = null) {
     : "";
 
   colors.forEach((color) => {
+    // Initialize color state
+    if (!currentColorImagesMap[color]) {
+      currentColorImagesMap[color] = {
+        existing: [...(existingMap[color] || [])],
+        newFiles: savedFiles[color] ? Array.from(savedFiles[color]) : [],
+      };
+    } else {
+      // Use preserved state if available, else existing
+      if (preservedColorState[color]) {
+        currentColorImagesMap[color] = preservedColorState[color];
+      } else {
+        currentColorImagesMap[color] = {
+          existing: [...(existingMap[color] || [])],
+          newFiles: savedFiles[color] ? Array.from(savedFiles[color]) : [],
+        };
+      }
+    }
+
     const sec = document.createElement("div");
     sec.className = "color-img-section";
     sec.dataset.color = color;
-    const existingImgs = existingMap[color] || [];
-    sec.dataset.existing = JSON.stringify(existingImgs);
+    sec.dataset.existing = JSON.stringify(
+      currentColorImagesMap[color].existing,
+    );
 
     sec.innerHTML = `
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
@@ -754,19 +852,9 @@ function buildColorImagesSections(existingColorImages = null) {
         <strong style="font-size:13px;">${color} — photos</strong>
       </div>
       ${
-        existingImgs.length
+        currentColorImagesMap[color].existing.length
           ? `
-        <div class="existing-color-imgs" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
-          ${existingImgs
-            .map(
-              (img) => `
-            <div class="existing-color-img-wrap" style="position:relative;display:inline-block;">
-              <img src="${img}" style="width:52px;height:52px;object-fit:cover;border-radius:4px;border:1px solid #eee;display:block;" title="Existing">
-              <button type="button" class="del-color-img-btn" data-url="${img}" data-color="${color}" style="position:absolute;top:-5px;right:-5px;width:16px;height:16px;border-radius:50%;background:#e74c3c;color:#fff;border:none;cursor:pointer;font-size:9px;line-height:16px;text-align:center;padding:0;">✕</button>
-            </div>`,
-            )
-            .join("")}
-        </div>
+        <div class="existing-color-imgs" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;"></div>
         <p style="font-size:11px;color:#888;margin-bottom:4px;">Upload new images to add more (existing images remain unless you click ✕).</p>
       `
           : ""
@@ -778,30 +866,103 @@ function buildColorImagesSections(existingColorImages = null) {
       <div class="color-img-preview" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;"></div>
     `;
 
+    // Render existing color images
+    const existingImgsContainer = sec.querySelector(".existing-color-imgs");
+    if (existingImgsContainer) {
+      currentColorImagesMap[color].existing.forEach((imgUrl, idx) => {
+        const wrap = document.createElement("div");
+        wrap.className = "existing-color-img-wrap img-wrapper";
+        wrap.style.cssText = "position:relative;display:inline-block;";
+        wrap.dataset.url = imgUrl;
+
+        wrap.innerHTML = `
+          <img src="${imgUrl}" style="width:52px;height:52px;object-fit:cover;border-radius:4px;border:1px solid #eee;display:block;" title="Existing">
+          <button type="button" class="del-color-img-btn" data-url="${imgUrl}" data-color="${color}" style="position:absolute;top:-5px;right:-5px;width:16px;height:16px;border-radius:50%;background:#e74c3c;color:#fff;border:none;cursor:pointer;font-size:9px;line-height:16px;text-align:center;padding:0;">✕</button>
+        `;
+
+        // Delete button
+        wrap.querySelector("button").addEventListener("click", (e) => {
+          e.stopPropagation();
+          const url = e.currentTarget.dataset.url;
+          const colorKey = e.currentTarget.dataset.color;
+          if (!deletedColorImages[colorKey]) deletedColorImages[colorKey] = [];
+          deletedColorImages[colorKey].push(url);
+
+          // Remove from currentColorImagesMap
+          const idx = currentColorImagesMap[colorKey].existing.indexOf(url);
+          if (idx !== -1)
+            currentColorImagesMap[colorKey].existing.splice(idx, 1);
+
+          wrap.remove();
+        });
+
+        existingImgsContainer.appendChild(wrap);
+      });
+
+      // Make existing images sortable
+      new Sortable(existingImgsContainer, {
+        animation: 150,
+        ghostClass: "sortable-ghost",
+        chosenClass: "sortable-chosen",
+        onEnd: function (evt) {
+          const movedItem = currentColorImagesMap[color].existing.splice(
+            evt.oldIndex,
+            1,
+          )[0];
+          currentColorImagesMap[color].existing.splice(
+            evt.newIndex,
+            0,
+            movedItem,
+          );
+        },
+      });
+    }
+
     // Attach file-change listener
     const fileInput = sec.querySelector("input[type=file]");
     const preview = sec.querySelector(".color-img-preview");
     fileInput.addEventListener("change", () => {
+      currentColorImagesMap[color].newFiles = Array.from(fileInput.files || []);
       preview.innerHTML = "";
-      Array.from(fileInput.files).forEach((file) => {
+      currentColorImagesMap[color].newFiles.forEach((file, idx) => {
+        const wrap = document.createElement("div");
+        wrap.className = "img-wrapper";
+        wrap.style.cssText = "position:relative;display:inline-block;";
+        wrap.dataset.index = String(idx);
+
         const img = document.createElement("img");
         img.src = URL.createObjectURL(file);
         img.style.cssText =
           "width:52px;height:52px;object-fit:cover;border-radius:4px;border:1px solid #eee;";
-        preview.appendChild(img);
+        wrap.appendChild(img);
+        preview.appendChild(wrap);
+      });
+
+      // Make new color images sortable
+      new Sortable(preview, {
+        animation: 150,
+        ghostClass: "sortable-ghost",
+        chosenClass: "sortable-chosen",
+        onEnd: function (evt) {
+          const movedItem = currentColorImagesMap[color].newFiles.splice(
+            evt.oldIndex,
+            1,
+          )[0];
+          currentColorImagesMap[color].newFiles.splice(
+            evt.newIndex,
+            0,
+            movedItem,
+          );
+        },
       });
     });
 
-    // Wire up existing-image delete buttons
-    sec.querySelectorAll(".del-color-img-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const url = btn.dataset.url;
-        const colorKey = btn.dataset.color;
-        if (!deletedColorImages[colorKey]) deletedColorImages[colorKey] = [];
-        deletedColorImages[colorKey].push(url);
-        btn.closest(".existing-color-img-wrap").remove();
-      });
-    });
+    // If we had saved files, render them
+    if (savedFiles[color] && savedFiles[color].length > 0) {
+      fileInput.files = savedFiles[color]; // Re-set the files on input
+      const event = new Event("change");
+      fileInput.dispatchEvent(event);
+    }
 
     container.appendChild(sec);
   });
@@ -857,24 +1018,28 @@ async function saveProduct(e) {
       });
     fd.append("variants", JSON.stringify(variants));
 
-    // General images (optional fallback)
-    const imageInput = document.getElementById("product-images-input");
-    if (imageInput && imageInput.files.length > 0) {
-      Array.from(imageInput.files).forEach((file) => fd.append("images", file));
+    // Send ordered existing images (for edits)
+    if (currentExistingImages.length > 0) {
+      fd.append("orderedExistingImages", JSON.stringify(currentExistingImages));
     }
 
-    // Per-color images — one input per color section
-    document
-      .querySelectorAll("#color-images-container .color-img-section")
-      .forEach((sec) => {
-        const color = sec.dataset.color;
-        const input = sec.querySelector("input[type=file]");
-        if (input && input.files.length > 0) {
-          Array.from(input.files).forEach((file) =>
-            fd.append(`colorImg_${encodeURIComponent(color)}`, file),
-          );
-        }
+    // General images (optional fallback) - use ordered currentNewFiles
+    if (currentNewFiles.length > 0) {
+      currentNewFiles.forEach((file) => fd.append("images", file));
+    }
+
+    // Per-color images - send ordered existing and new files
+    const colorImageData = {};
+    Object.keys(currentColorImagesMap).forEach((color) => {
+      colorImageData[color] = {
+        existing: currentColorImagesMap[color].existing,
+      };
+      // Append new files in order
+      currentColorImagesMap[color].newFiles.forEach((file) => {
+        fd.append(`colorImg_${encodeURIComponent(color)}`, file);
       });
+    });
+    fd.append("colorImageOrder", JSON.stringify(colorImageData));
 
     // Send deleted image lists so the server can purge them
     if (deletedGeneralImages.length > 0) {
@@ -930,6 +1095,9 @@ async function loadHomepage() {
   const heroMsg = document.getElementById("homepage-hero-msg");
   if (heroMsg) heroMsg.classList.add("hidden");
 
+  const navbarMsg = document.getElementById("navbar-menu-image-msg");
+  if (navbarMsg) navbarMsg.classList.add("hidden");
+
   const slotsEl = document.getElementById("homepage-slots");
   if (slotsEl)
     slotsEl.innerHTML = `<p style="color:#888;font-size:13px;">Loading...</p>`;
@@ -954,6 +1122,17 @@ async function loadHomepage() {
       const imgEl = document.getElementById("current-hero-image");
       if (vidEl) vidEl.innerHTML = "No video uploaded.";
       if (imgEl) imgEl.innerHTML = "No fallback image uploaded.";
+    }
+
+    // Load navbar menu image setting
+    const navbarRes = await apiFetch("/settings/navbar-menu-image");
+    const navbarImgEl = document.getElementById("current-navbar-menu-image");
+    if (navbarImgEl) {
+      if (navbarRes && navbarRes.value && navbarRes.value.menuImage) {
+        navbarImgEl.innerHTML = `Current: <a href="${navbarRes.value.menuImage}" target="_blank" style="color:var(--accent);">View Image</a>`;
+      } else {
+        navbarImgEl.innerHTML = "No menu image uploaded.";
+      }
     }
 
     if (!homepageProductsCache) {
@@ -1010,6 +1189,46 @@ async function saveHomepageHero(e) {
     if (btn) {
       btn.disabled = false;
       btn.textContent = "Save Hero Video";
+    }
+  }
+}
+
+async function saveNavbarMenuImage(e) {
+  e.preventDefault();
+  const form = e.target;
+  const msg = document.getElementById("navbar-menu-image-msg");
+  const btn = document.getElementById("navbar-menu-image-save-btn");
+  if (msg) msg.classList.add("hidden");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Saving...";
+  }
+
+  try {
+    const fd = new FormData();
+    const imageInput = form.querySelector("[name=menuImage]");
+
+    if (imageInput.files && imageInput.files.length > 0) {
+      fd.append("menuImage", imageInput.files[0]);
+    }
+
+    fd.append("value", JSON.stringify({}));
+
+    await fetch(`${API}/settings/navbar-menu-image`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}` },
+      body: fd,
+    });
+
+    showToast("Navbar menu image saved!", "success");
+    imageInput.value = "";
+    loadHomepage();
+  } catch (err) {
+    if (msg) showMsg(msg, err.message, "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Save Menu Image";
     }
   }
 }
@@ -1269,9 +1488,13 @@ function debounceLoadProducts() {
   }, 400);
 }
 
-function removeGeneralImage(btn, url) {
+function removeGeneralImage(wrapper, url) {
   deletedGeneralImages.push(url);
-  btn.parentElement.remove();
+  // Remove from currentExistingImages too
+  const idx = currentExistingImages.indexOf(url);
+  if (idx !== -1) currentExistingImages.splice(idx, 1);
+
+  wrapper.remove();
   if (selectedCoverImageUrl === url) selectedCoverImageUrl = "";
 }
 
