@@ -558,7 +558,11 @@ async function openProductModal(id = null) {
   deletedColorImages = {};
   selectedCoverImageUrl = "";
   selectedCoverUploadIndex = null;
+  currentExistingImages = [];
+  currentNewFiles = [];
   currentColorImagesMap = {};
+  const productImagesInput = document.getElementById("product-images-input");
+  if (productImagesInput) productImagesInput.value = "";
 
   const homeEnabled = document.getElementById("home-enabled");
   const homeSlotWrap = document.getElementById("home-slot-wrap");
