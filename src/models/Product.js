@@ -26,6 +26,20 @@ const productSchema = new mongoose.Schema({
     required: true,
     trim: true,
   },
+  categories: {
+    type: [String],
+    validate: [
+      {
+        validator: function (arr) {
+          if (arr === undefined || arr === null) return true;
+          if (!Array.isArray(arr)) return false;
+          if (arr.length > 2) return false;
+          return arr.every((v) => typeof v === "string" && v.trim().length > 0);
+        },
+        message: "Categories must be an array of up to 2 category slugs.",
+      },
+    ],
+  },
   productType: { type: String, trim: true }, // e.g. "pantalons", "tops", "jackets"
   images: [{ type: String }],         // fallback / general images
   coverImage: { type: String, trim: true },
@@ -59,6 +73,28 @@ productSchema.virtual("colors").get(function () {
 // Include virtuals when converting to JSON / plain object
 productSchema.set("toJSON", { virtuals: true });
 productSchema.set("toObject", { virtuals: true });
+
+productSchema.pre("validate", function (next) {
+  if (Array.isArray(this.categories)) {
+    const normalized = this.categories
+      .map((c) => String(c || "").trim())
+      .filter(Boolean);
+    this.categories = Array.from(new Set(normalized)).slice(0, 2);
+  }
+
+  if (
+    (!Array.isArray(this.categories) || this.categories.length === 0) &&
+    this.category
+  ) {
+    this.categories = [String(this.category).trim()].filter(Boolean);
+  }
+
+  if ((!this.category || !String(this.category).trim()) && this.categories?.[0]) {
+    this.category = String(this.categories[0]).trim();
+  }
+
+  next();
+});
 
 // Keep updatedAt current on every save; auto-generate slug from name if not set, and ensure uniqueness
 productSchema.pre("save", async function (next) {

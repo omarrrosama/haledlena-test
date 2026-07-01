@@ -510,11 +510,15 @@ async function loadProducts() {
           const stock = p.variants
             ? p.variants.reduce((s, v) => s + (v.stock || 0), 0)
             : 0;
+          const categoryLabel =
+            Array.isArray(p.categories) && p.categories.length > 0
+              ? p.categories.join(", ")
+              : p.category || "";
           return `
         <tr>
           <td>${p.images?.[0] ? `<img src="${p.images[0]}" class="product-thumb">` : '<div class="no-image">No img</div>'}</td>
           <td><strong>${p.name}</strong><br><small style="color:#888">${p.slug || ""}</small></td>
-          <td><span style="background:#f0f0f0;padding:2px 8px;border-radius:4px;font-size:12px;text-transform:capitalize;">${p.category}</span></td>
+          <td><span style="background:#f0f0f0;padding:2px 8px;border-radius:4px;font-size:12px;text-transform:capitalize;">${categoryLabel}</span></td>
           <td>${p.price.toLocaleString()} EGP</td>
           <td>${stock} units</td>
           <td><span class="status-badge ${p.active ? "status-delivered" : "status-cancelled"}">${p.active ? "Active" : "Inactive"}</span></td>
@@ -583,12 +587,16 @@ async function openProductModal(id = null) {
 
   if (id) {
     try {
-      const data = await apiFetch(`/products/admin/all`);
-      const p = data.products.find((x) => x._id === id);
-      if (!p) throw new Error("Product not found");
+      const { product: p } = await apiFetch(`/products/admin/${id}`);
 
-      // Populate categories and pre-select the product's current category
-      await populateCategorySelect(p.category || "");
+      const selectedCategories =
+        Array.isArray(p.categories) && p.categories.length > 0
+          ? p.categories
+          : p.category
+            ? [p.category]
+            : [];
+      await populateCategorySelect(selectedCategories);
+      syncCategorySelects();
 
       form.querySelector("[name=name]").value = p.name || "";
       form.querySelector("[name=productType]").value = p.productType || "";
@@ -668,7 +676,8 @@ async function openProductModal(id = null) {
     }
   } else {
     // Populate categories with no pre-selection
-    await populateCategorySelect("");
+    await populateCategorySelect([]);
+    syncCategorySelects();
     addVariantRow();
   }
 }
@@ -985,7 +994,17 @@ async function saveProduct(e) {
     const fd = new FormData();
 
     fd.append("name", form.querySelector("[name=name]").value);
-    fd.append("category", form.querySelector("[name=category]").value);
+    const cat1 = (form.querySelector("[name=category]")?.value || "").trim();
+    const cat2 = (form.querySelector("[name=category2]")?.value || "").trim();
+    const selectedCategories = Array.from(new Set([cat1, cat2].filter(Boolean)));
+    if (selectedCategories.length === 0) {
+      throw new Error("Choose at least 1 category for this product.");
+    }
+    if (selectedCategories.length > 2) {
+      throw new Error("You can choose up to 2 categories only.");
+    }
+    fd.append("category", selectedCategories[0]);
+    selectedCategories.forEach((c) => fd.append("categories", c));
     fd.append("productType", form.querySelector("[name=productType]").value);
     fd.append("price", form.querySelector("[name=price]").value);
     fd.append("description", form.querySelector("[name=description]").value);
@@ -1428,19 +1447,64 @@ async function deleteCategory(id, name) {
   }
 }
 
-async function populateCategorySelect(selectedValue) {
-  const select = document.getElementById("product-category-select");
+function syncCategorySelects() {
+  const s1 = document.getElementById("product-category-select-1");
+  const s2 = document.getElementById("product-category-select-2");
+  if (!s1 || !s2) return;
+
+  const v1 = (s1.value || "").trim();
+  const v2 = (s2.value || "").trim();
+  if (v1 && v2 && v1 === v2) s2.value = "";
+
+  Array.from(s1.options || []).forEach((o) => {
+    o.disabled = Boolean(v2 && o.value && o.value === v2);
+  });
+  Array.from(s2.options || []).forEach((o) => {
+    o.disabled = Boolean(v1 && o.value && o.value === v1);
+  });
+}
+
+async function populateCategorySelect(selectedValues) {
+  const select1 = document.getElementById("product-category-select-1");
+  const select2 = document.getElementById("product-category-select-2");
+  if (!select1 || !select2) return;
+
+  const selected = (Array.isArray(selectedValues) ? selectedValues : [])
+    .map((v) => String(v || "").trim())
+    .filter(Boolean);
+  const selected1 = selected[0] || "";
+  const selected2 = selected[1] || "";
+
   try {
     const { categories } = await apiFetch("/categories/admin/all");
-    select.innerHTML = categories
-      .map(
-        (cat) =>
-          `<option value="${cat.slug}"${cat.slug === selectedValue ? " selected" : ""}>${cat.name}</option>`,
-      )
-      .join("");
-    if (selectedValue) select.value = selectedValue;
+    const options =
+      `<option value="">Choose category...</option>` +
+      categories
+        .map((cat) => `<option value="${cat.slug}">${cat.name}</option>`)
+        .join("");
+
+    select1.innerHTML = options;
+    select2.innerHTML = options;
+    select1.value = selected1;
+    select2.value = selected2 !== selected1 ? selected2 : "";
+
+    const clear1 = document.getElementById("product-category-clear-1");
+    const clear2 = document.getElementById("product-category-clear-2");
+    if (clear1)
+      clear1.onclick = () => {
+        select1.value = "";
+        syncCategorySelects();
+      };
+    if (clear2)
+      clear2.onclick = () => {
+        select2.value = "";
+        syncCategorySelects();
+      };
+    select1.onchange = () => syncCategorySelects();
+    select2.onchange = () => syncCategorySelects();
   } catch {
-    select.innerHTML = '<option value="">Failed to load categories</option>';
+    select1.innerHTML = '<option value="">Failed to load categories</option>';
+    select2.innerHTML = '<option value="">Failed to load categories</option>';
   }
 }
 

@@ -18,6 +18,37 @@ function pickCoverImage({ coverImage, images, colorImages }) {
   return "";
 }
 
+function normalizeCategoriesInput({ category, categories }) {
+  let list = [];
+
+  if (Array.isArray(categories)) {
+    list = categories;
+  } else if (typeof categories === "string") {
+    const raw = categories.trim();
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) list = parsed;
+        else if (parsed) list = [parsed];
+      } catch {
+        list = raw.split(",").map((s) => s.trim());
+      }
+    }
+  } else if (categories) {
+    list = [categories];
+  }
+
+  if (category && list.length === 0) list = [category];
+
+  const normalized = list.map((s) => String(s || "").trim()).filter(Boolean);
+  const uniqueAll = Array.from(new Set(normalized));
+  const tooMany = uniqueAll.length > 2;
+  const unique = uniqueAll.slice(0, 2);
+  const primary = unique[0] || (category ? String(category).trim() : "");
+
+  return { primaryCategory: primary, categories: unique, tooMany };
+}
+
 // PUBLIC: GET /api/products - List active products
 router.get("/", async (req, res) => {
   try {
@@ -30,13 +61,18 @@ router.get("/", async (req, res) => {
       limit = 20,
     } = req.query;
     const filter = { active: true };
-    if (category) filter.category = category;
+    const and = [];
+    if (category)
+      and.push({ $or: [{ category }, { categories: String(category) }] });
     if (featured) filter.featured = featured === "true";
     if (search)
-      filter.$or = [
-        { name: { $regex: search, $options: "i" } },
-        { description: { $regex: search, $options: "i" } },
-      ];
+      and.push({
+        $or: [
+          { name: { $regex: search, $options: "i" } },
+          { description: { $regex: search, $options: "i" } },
+        ],
+      });
+    if (and.length > 0) filter.$and = and;
 
     const products = await Product.find(filter)
       .sort(sort)
@@ -53,7 +89,11 @@ router.get("/", async (req, res) => {
 // PUBLIC: GET /api/products/categories
 router.get("/categories", async (req, res) => {
   try {
-    const categories = await Product.distinct("category", { active: true });
+    const primary = await Product.distinct("category", { active: true });
+    const extra = await Product.distinct("categories", { active: true });
+    const categories = Array.from(
+      new Set([...(primary || []), ...(extra || [])].filter(Boolean)),
+    ).sort();
     res.json({ success: true, categories });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -239,12 +279,18 @@ router.get("/admin/all", protect, async (req, res) => {
   try {
     const { search, category, page = 1, limit = 20 } = req.query;
     const filter = {};
-    if (category) filter.category = category;
+    const and = [];
+    if (category)
+      and.push({ $or: [{ category }, { categories: String(category) }] });
     if (search)
-      filter.$or = [
-        { name: { $regex: search, $options: "i" } },
-        { category: { $regex: search, $options: "i" } },
-      ];
+      and.push({
+        $or: [
+          { name: { $regex: search, $options: "i" } },
+          { category: { $regex: search, $options: "i" } },
+          { categories: { $regex: search, $options: "i" } },
+        ],
+      });
+    if (and.length > 0) filter.$and = and;
 
     const products = await Product.find(filter)
       .sort("-createdAt")
@@ -254,6 +300,24 @@ router.get("/admin/all", protect, async (req, res) => {
     const total = await Product.countDocuments(filter);
     res.json({ success: true, total, products });
   } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.get("/admin/:id", protect, async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product)
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found." });
+    res.json({ success: true, product });
+  } catch (err) {
+    if (err && err.name === "CastError") {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid product id." });
+    }
     res.status(500).json({ success: false, message: err.message });
   }
 });
@@ -376,14 +440,38 @@ router.post("/", protect, upload.any(), async (req, res) => {
     data.featured = data.featured === "true" || data.featured === true;
     data.active = data.active !== "false" && data.active !== false;
 
-    // Validate category
-    if (data.category) {
-      const cat = await Category.findOne({ slug: data.category });
-      if (!cat)
-        return res.status(400).json({
-          success: false,
-          message: `Category "${data.category}" does not exist.`,
-        });
+    const normalized = normalizeCategoriesInput({
+      category: data.category,
+      categories: data.categories,
+    });
+    if (normalized.tooMany) {
+      return res.status(400).json({
+        success: false,
+        message: "You can choose up to 2 categories only.",
+      });
+    }
+    data.category = normalized.primaryCategory;
+    data.categories = normalized.categories;
+
+    if (!data.category) {
+      return res.status(400).json({
+        success: false,
+        message: "Category is required.",
+      });
+    }
+    if (data.categories.length === 0) data.categories = [data.category];
+
+    const toValidate = data.categories;
+    const found = await Category.find({ slug: { $in: toValidate } }).select(
+      "slug",
+    );
+    const foundSet = new Set(found.map((c) => c.slug));
+    const missing = toValidate.filter((s) => !foundSet.has(s));
+    if (missing.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Category "${missing[0]}" does not exist.`,
+      });
     }
 
     const coverImageUploadIndex = parseInt(data.coverImageUploadIndex, 10);
@@ -756,9 +844,45 @@ router.put("/:id", protect, upload.any(), async (req, res) => {
     if (data.active !== undefined)
       data.active = data.active !== "false" && data.active !== false;
 
+    if (data.category !== undefined || data.categories !== undefined) {
+      const normalized = normalizeCategoriesInput({
+        category: data.category,
+        categories: data.categories,
+      });
+      if (normalized.tooMany) {
+        return res.status(400).json({
+          success: false,
+          message: "You can choose up to 2 categories only.",
+        });
+      }
+      data.category = normalized.primaryCategory;
+      data.categories = normalized.categories;
+      if (!data.category) {
+        return res.status(400).json({
+          success: false,
+          message: "Category is required.",
+        });
+      }
+      if (data.categories.length === 0) data.categories = [data.category];
+
+      const toValidate = data.categories;
+      const found = await Category.find({ slug: { $in: toValidate } }).select(
+        "slug",
+      );
+      const foundSet = new Set(found.map((c) => c.slug));
+      const missing = toValidate.filter((s) => !foundSet.has(s));
+      if (missing.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Category "${missing[0]}" does not exist.`,
+        });
+      }
+    }
+
     // Explicitly update each field to avoid Mongoose array merging issues
     product.name = data.name;
     product.category = data.category;
+    product.categories = data.categories;
     product.productType = data.productType;
     product.price = data.price;
     product.description = data.description;
