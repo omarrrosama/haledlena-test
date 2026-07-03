@@ -42,8 +42,8 @@ function normalizeCategoriesInput({ category, categories }) {
 
   const normalized = list.map((s) => String(s || "").trim()).filter(Boolean);
   const uniqueAll = Array.from(new Set(normalized));
-  const tooMany = uniqueAll.length > 2;
-  const unique = uniqueAll.slice(0, 2);
+  const tooMany = uniqueAll.length > 3;
+  const unique = uniqueAll.slice(0, 3);
   const primary = unique[0] || (category ? String(category).trim() : "");
 
   return { primaryCategory: primary, categories: unique, tooMany };
@@ -447,7 +447,7 @@ router.post("/", protect, upload.any(), async (req, res) => {
     if (normalized.tooMany) {
       return res.status(400).json({
         success: false,
-        message: "You can choose up to 2 categories only.",
+        message: "You can choose up to 3 categories only.",
       });
     }
     data.category = normalized.primaryCategory;

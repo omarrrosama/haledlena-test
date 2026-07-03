@@ -996,12 +996,15 @@ async function saveProduct(e) {
     fd.append("name", form.querySelector("[name=name]").value);
     const cat1 = (form.querySelector("[name=category]")?.value || "").trim();
     const cat2 = (form.querySelector("[name=category2]")?.value || "").trim();
-    const selectedCategories = Array.from(new Set([cat1, cat2].filter(Boolean)));
+    const cat3 = (form.querySelector("[name=category3]")?.value || "").trim();
+    const selectedCategories = Array.from(
+      new Set([cat1, cat2, cat3].filter(Boolean)),
+    );
     if (selectedCategories.length === 0) {
       throw new Error("Choose at least 1 category for this product.");
     }
-    if (selectedCategories.length > 2) {
-      throw new Error("You can choose up to 2 categories only.");
+    if (selectedCategories.length > 3) {
+      throw new Error("You can choose up to 3 categories only.");
     }
     fd.append("category", selectedCategories[0]);
     selectedCategories.forEach((c) => fd.append("categories", c));
@@ -1450,30 +1453,45 @@ async function deleteCategory(id, name) {
 function syncCategorySelects() {
   const s1 = document.getElementById("product-category-select-1");
   const s2 = document.getElementById("product-category-select-2");
-  if (!s1 || !s2) return;
+  const s3 = document.getElementById("product-category-select-3");
+  if (!s1 || !s2 || !s3) return;
 
   const v1 = (s1.value || "").trim();
   const v2 = (s2.value || "").trim();
+  const v3 = (s3.value || "").trim();
   if (v1 && v2 && v1 === v2) s2.value = "";
+  if (v1 && v3 && v1 === v3) s3.value = "";
+  if (v2 && v3 && v2 === v3) s3.value = "";
 
   Array.from(s1.options || []).forEach((o) => {
-    o.disabled = Boolean(v2 && o.value && o.value === v2);
+    o.disabled = Boolean(
+      (v2 && o.value && o.value === v2) || (v3 && o.value && o.value === v3),
+    );
   });
   Array.from(s2.options || []).forEach((o) => {
-    o.disabled = Boolean(v1 && o.value && o.value === v1);
+    o.disabled = Boolean(
+      (v1 && o.value && o.value === v1) || (v3 && o.value && o.value === v3),
+    );
+  });
+  Array.from(s3.options || []).forEach((o) => {
+    o.disabled = Boolean(
+      (v1 && o.value && o.value === v1) || (v2 && o.value && o.value === v2),
+    );
   });
 }
 
 async function populateCategorySelect(selectedValues) {
   const select1 = document.getElementById("product-category-select-1");
   const select2 = document.getElementById("product-category-select-2");
-  if (!select1 || !select2) return;
+  const select3 = document.getElementById("product-category-select-3");
+  if (!select1 || !select2 || !select3) return;
 
   const selected = (Array.isArray(selectedValues) ? selectedValues : [])
     .map((v) => String(v || "").trim())
     .filter(Boolean);
   const selected1 = selected[0] || "";
   const selected2 = selected[1] || "";
+  const selected3 = selected[2] || "";
 
   try {
     const { categories } = await apiFetch("/categories/admin/all");
@@ -1485,11 +1503,15 @@ async function populateCategorySelect(selectedValues) {
 
     select1.innerHTML = options;
     select2.innerHTML = options;
+    select3.innerHTML = options;
     select1.value = selected1;
     select2.value = selected2 !== selected1 ? selected2 : "";
+    select3.value =
+      selected3 !== selected1 && selected3 !== selected2 ? selected3 : "";
 
     const clear1 = document.getElementById("product-category-clear-1");
     const clear2 = document.getElementById("product-category-clear-2");
+    const clear3 = document.getElementById("product-category-clear-3");
     if (clear1)
       clear1.onclick = () => {
         select1.value = "";
@@ -1500,11 +1522,18 @@ async function populateCategorySelect(selectedValues) {
         select2.value = "";
         syncCategorySelects();
       };
+    if (clear3)
+      clear3.onclick = () => {
+        select3.value = "";
+        syncCategorySelects();
+      };
     select1.onchange = () => syncCategorySelects();
     select2.onchange = () => syncCategorySelects();
+    select3.onchange = () => syncCategorySelects();
   } catch {
     select1.innerHTML = '<option value="">Failed to load categories</option>';
     select2.innerHTML = '<option value="">Failed to load categories</option>';
+    select3.innerHTML = '<option value="">Failed to load categories</option>';
   }
 }
 
