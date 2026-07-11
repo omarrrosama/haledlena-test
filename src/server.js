@@ -3,12 +3,25 @@ const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
 const path = require("path");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 const connectDB = require("./config/db");
 
 const app = express();
 
 // Connect to MongoDB
 connectDB();
+
+// Security Middleware
+app.use(helmet());
+
+// Rate Limiting
+const limiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 60, // limit each IP to 60 requests per windowMs
+  message: "Too many requests from this IP, please try again later",
+});
+app.use("/api/", limiter);
 
 // Middleware
 app.use(
@@ -20,8 +33,8 @@ app.use(
     credentials: true,
   }),
 );
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 app.use(morgan("dev"));
 
 // Static files (uploads + admin panel)
