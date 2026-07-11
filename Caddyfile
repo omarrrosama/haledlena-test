@@ -1,4 +1,4 @@
-api.haledlina.com {
+api.haledlena.com {
   reverse_proxy backend:5000
 
   header {
@@ -11,7 +11,7 @@ api.haledlina.com {
   }
 }
 
-portainer.haledlina.com {
+portainer.haledlena.com {
   reverse_proxy portainer:9443 {
     transport http {
       tls
