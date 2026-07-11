@@ -15,6 +15,7 @@ connectDB();
 // Security Middleware
 app.use(
   helmet({
+    contentSecurityPolicy: false,
     crossOriginResourcePolicy: {
       policy: "cross-origin",
     },
