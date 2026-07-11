@@ -1,0 +1,12 @@
+node_modules
+npm-debug.log
+.env
+.git
+.gitignore
+README.md
+*.pem
+fix-slugs.js
+optimize-images.js
+seed.js
+test-email.js
+test-order-email.js
