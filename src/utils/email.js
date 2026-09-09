@@ -1,22 +1,29 @@
 const nodemailer = require('nodemailer');
 
-const createTransporter = () => {
-  return nodemailer.createTransport({
-    host: process.env.EMAIL_HOST,
-    port: parseInt(process.env.EMAIL_PORT, 10) || 587, // must be a Number, not a string
-    secure: false, // TLS via STARTTLS on port 587
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS   // App Password — no spaces (see .env)
-    }
-  });
+let transporter;
+
+const getTransporter = () => {
+  if (!transporter) {
+    transporter = nodemailer.createTransport({
+      host: process.env.EMAIL_HOST,
+      port: parseInt(process.env.EMAIL_PORT, 10) || 587,
+      secure: false,
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+      }
+    });
+  }
+  return transporter;
 };
 
-// Send order confirmation to customer
 const sendOrderConfirmation = async (order) => {
-  if (!order.customer.email) return;
+  if (!order.customer.email) {
+    console.log('[EMAIL] Customer confirmation skipped: no email provided for order', order.orderNumber);
+    return;
+  }
 
-  const transporter = createTransporter();
+  const transporter = getTransporter();
   const itemsHtml = order.items.map(item => `
     <tr>
       <td style="padding:8px;border-bottom:1px solid #eee;">${item.productName}</td>
@@ -83,9 +90,13 @@ const sendOrderConfirmation = async (order) => {
   });
 };
 
-// Send new order notification to admin
 const sendAdminOrderNotification = async (order) => {
-  const transporter = createTransporter();
+  if (!process.env.ADMIN_EMAIL) {
+    console.error('[EMAIL] Admin notification skipped: ADMIN_EMAIL is not configured in .env');
+    return;
+  }
+
+  const transporter = getTransporter();
 
   const itemsHtml = order.items.map(item => `
     <tr>
@@ -138,9 +149,11 @@ const sendAdminOrderNotification = async (order) => {
   });
 };
 
-// Send order status update to customer
 const sendStatusUpdate = async (order) => {
-  if (!order.customer.email) return;
+  if (!order.customer.email) {
+    console.log('[EMAIL] Status update skipped: no customer email for order', order.orderNumber);
+    return;
+  }
 
   const statusMessages = {
     confirmed: 'Your order has been confirmed! We are preparing it for you.',
@@ -151,7 +164,7 @@ const sendStatusUpdate = async (order) => {
   };
 
   const message = statusMessages[order.status] || `Your order status has been updated to: ${order.status}`;
-  const transporter = createTransporter();
+  const transporter = getTransporter();
 
   await transporter.sendMail({
     from: process.env.EMAIL_FROM,
